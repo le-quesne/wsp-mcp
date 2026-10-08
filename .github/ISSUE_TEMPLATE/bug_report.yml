@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Don't paste real messages, phone numbers or anything from `~/.whatsapp-mcp`.** Use a test chat, or replace them with placeholders.
+        Security problems go through [private reporting](https://github.com/le-quesne/wsp-mcp/security/advisories/new), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Ask Claude "…"
+        2. It calls get_messages with …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `pnpm run doctor`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant lines from `~/.whatsapp-mcp/bridge.log`
+      description: Optional. Remove names and numbers first.
+      render: text
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.4"

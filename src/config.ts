@@ -15,6 +15,9 @@ export const SOCKET_PATH = (() => {
 })()
 export const CONFIG_PATH = join(HOME, 'config.json')
 export const MEDIA_DIR = join(HOME, 'media')
+// The speech model whisper.cpp transcribes with (`pnpm run setup` downloads it).
+export const WHISPER_MODEL =
+  process.env.WA_WHISPER_MODEL ?? join(homedir(), '.cache/whisper-cpp/ggml-large-v3-turbo-q8_0.bin')
 
 export type Config = {
   // Phone numbers with country code (any formatting), full JIDs (e.g. "1203...@g.us"),

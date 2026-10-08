@@ -1,27 +1,20 @@
 // Downloading files and turning audio into text, all on this Mac.
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { downloadMediaMessage, proto, type WAMessage, type WASocket } from 'baileys'
 import type { Logger } from 'pino'
-import { MEDIA_DIR } from './config.ts'
+import { findBin } from './bin.ts'
+import { MEDIA_DIR, WHISPER_MODEL } from './config.ts'
 import type { MediaRow } from './store.ts'
 
 const run = promisify(execFile)
 
-const WHISPER_MODEL =
-  process.env.WA_WHISPER_MODEL ?? join(homedir(), '.cache/whisper-cpp/ggml-large-v3-turbo-q8_0.bin')
-
-// launchd starts us with a bare PATH, so look in Homebrew's locations too.
 function bin(name: string): string {
-  const dirs = [...(process.env.PATH ?? '').split(delimiter), '/opt/homebrew/bin', '/usr/local/bin']
-  for (const d of dirs) {
-    const p = join(d, name)
-    if (d && existsSync(p)) return p
-  }
-  throw new Error(`${name} not found (brew install ${name === 'whisper-cli' ? 'whisper-cpp' : 'ffmpeg'})`)
+  const path = findBin(name)
+  if (!path) throw new Error(`${name} not found (brew install ${name === 'whisper-cli' ? 'whisper-cpp' : 'ffmpeg'})`)
+  return path
 }
 
 const EXT: Record<string, string> = {

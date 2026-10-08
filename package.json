@@ -3,7 +3,21 @@
   "version": "0.1.0",
   "description": "Read and (carefully) reply to your personal WhatsApp from Claude Code, over MCP.",
   "license": "MIT",
-  "private": true,
+  "author": "le-quesne",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/le-quesne/wsp-mcp.git"
+  },
+  "homepage": "https://github.com/le-quesne/wsp-mcp#readme",
+  "bugs": "https://github.com/le-quesne/wsp-mcp/issues",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "whatsapp",
+    "claude",
+    "claude-code",
+    "baileys"
+  ],
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -11,12 +25,15 @@
   "scripts": {
     "bridge": "node --disable-warning=ExperimentalWarning src/bridge.ts",
     "mcp": "node --disable-warning=ExperimentalWarning src/mcp.ts",
+    "setup": "node --disable-warning=ExperimentalWarning src/setup.ts",
+    "doctor": "node --disable-warning=ExperimentalWarning src/doctor.ts",
     "typecheck": "tsc --noEmit",
     "agent:install": "sh scripts/agent.sh install",
     "agent:uninstall": "sh scripts/agent.sh uninstall",
     "agent:status": "sh scripts/agent.sh status",
     "menubar:install": "sh scripts/menubar.sh install",
-    "menubar:uninstall": "sh scripts/menubar.sh uninstall"
+    "menubar:uninstall": "sh scripts/menubar.sh uninstall",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.ts\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
@@ -29,5 +46,6 @@
     "@types/node": "^24.19.0",
     "@types/qrcode-terminal": "^0.12.2",
     "typescript": "^7.0.2"
-  }
+  },
+  "packageManager": "pnpm@10.28.2"
 }

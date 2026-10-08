@@ -22,6 +22,8 @@ import makeWASocket, {
 } from 'baileys'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
+import { isAllowed } from './allow.ts'
+import { findBin } from './bin.ts'
 import { AUTH_DIR, CONFIG_PATH, SOCKET_PATH, ensureHome, loadConfig } from './config.ts'
 import { confirmSend } from './confirm.ts'
 import { openWriter } from './db.ts'
@@ -227,16 +229,6 @@ async function connect(): Promise<void> {
 
 // ---- local API for the MCP server ----
 
-function isAllowed(chat: string, allowed: string[]): boolean {
-  return allowed.some(entry => {
-    const e = entry.trim()
-    if (e === '*') return true
-    if (e.includes('@')) return store.canon(e.toLowerCase()) === chat
-    const digits = e.replace(/\D/g, '')
-    return digits.length > 0 && chat === `${digits}@s.whatsapp.net`
-  })
-}
-
 type Reply = [status: number, body: Record<string, unknown>]
 
 // One dialog at a time.
@@ -269,7 +261,7 @@ async function handleSend(body: unknown): Promise<Reply> {
   if (!chat || !isStorableJid(chat)) return [400, { error: `Not a person or group: ${jid}` }]
   const who = label(displayName(store.db, chat), chat)
   const config = loadConfig()
-  if (!isAllowed(chat, config.allowedRecipients)) {
+  if (!isAllowed(chat, config.allowedRecipients, j => store.canon(j))) {
     return [403, { error: `${who} is not in allowedRecipients. Only the user may add it, in ${CONFIG_PATH}.` }]
   }
   if (!sock || connection !== 'open') return [503, { error: 'The bridge is not connected to WhatsApp right now.' }]
@@ -318,7 +310,7 @@ async function handleAvatar(body: unknown): Promise<Reply> {
 // Baileys hangs encrypting large files (tested: 26–69 MB hang, 4–6 MB go out in 1 s).
 // Videos over MAX_FILE are recompressed to 720p before sending; other files over the limit are refused.
 const MAX_FILE = 16 * 1024 * 1024
-const FFMPEG = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'].find(p => existsSync(p)) ?? 'ffmpeg'
+const FFMPEG = findBin('ffmpeg') ?? 'ffmpeg'
 const run = promisify(execFile)
 
 async function shrinkVideo(path: string): Promise<string> {
@@ -343,7 +335,7 @@ async function handleSendFile(body: unknown): Promise<Reply> {
   if (!chat || !isStorableJid(chat)) return [400, { error: `Not a person or group: ${jid}` }]
   const who = label(displayName(store.db, chat), chat)
   const config = loadConfig()
-  if (!isAllowed(chat, config.allowedRecipients)) {
+  if (!isAllowed(chat, config.allowedRecipients, j => store.canon(j))) {
     return [403, { error: `${who} is not in allowedRecipients. Only the user may add it, in ${CONFIG_PATH}.` }]
   }
   if (!sock || connection !== 'open') return [503, { error: 'The bridge is not connected to WhatsApp right now.' }]

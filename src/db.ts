@@ -2,7 +2,7 @@ import { chmodSync, existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { DB_PATH } from './config.ts'
 
-const SCHEMA = `
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 -- WhatsApp is moving 1:1 chats to LID addressing. Everything is stored under the

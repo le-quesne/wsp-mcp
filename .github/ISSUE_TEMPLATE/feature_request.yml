@@ -1,0 +1,20 @@
+name: Feature request
+description: Something you'd like it to do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the solution. "I want to ask Claude to…"
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: Anything that sends has to keep the allowlist and the confirmation dialog. Ideas that work around them won't be accepted.
