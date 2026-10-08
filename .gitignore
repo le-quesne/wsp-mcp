@@ -1,0 +1,4 @@
+node_modules/
+# The compiled menu bar app (scripts/menubar.sh builds it from menubar/).
+build/
+.DS_Store
