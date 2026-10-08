@@ -14,6 +14,7 @@ import { CONFIG_PATH, ensureHome, loadConfig, WHISPER_MODEL } from './config.ts'
 import {
   AGENT_PLIST,
   agentTarget,
+  bridgeConnection,
   claudeBin,
   claudeRegistration,
   isPaired,
@@ -44,8 +45,10 @@ async function ask(question: string, byDefault: boolean): Promise<boolean> {
 }
 
 // Runs a command in this terminal, so its prompts and progress bars work.
+const quote = (arg: string) => (/[\s'"]/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg)
+
 function sh(cmd: string, args: string[]): boolean {
-  say(styleText('dim', `  $ ${[cmd, ...args].join(' ')}`))
+  say(styleText('dim', `  $ ${[cmd, ...args].map(quote).join(' ')}`))
   return spawnSync(cmd, args, { stdio: 'inherit', cwd: REPO }).status === 0
 }
 
@@ -80,9 +83,11 @@ const missing = (
 if (!missing.length) done('Installed')
 else {
   const pkgs = missing.map(([, pkg]) => pkg)
-  if (!findBin('brew')) later(`Missing ${pkgs.join(', ')} and Homebrew isn't installed`, `brew install ${pkgs.join(' ')}`)
+  // By its path: Homebrew's folder isn't always on PATH.
+  const brew = findBin('brew')
+  if (!brew) later(`Missing ${pkgs.join(', ')} and Homebrew isn't installed`, `brew install ${pkgs.join(' ')}`)
   else if (await ask(`Install ${pkgs.join(' and ')} with Homebrew? Voice notes are transcribed on this Mac.`, true)) {
-    sh('brew', ['install', ...pkgs])
+    sh(brew, ['install', ...pkgs])
   } else later('Skipped', `brew install ${pkgs.join(' ')}`)
 }
 
@@ -128,9 +133,16 @@ else if (await ask('Show the QR code now?', true)) {
 step(5, 'Run the bridge in the background')
 const agent = agentTarget(AGENT_PLIST, '/src/bridge.ts')
 const here = join(REPO, 'src', 'bridge.ts')
-if (agent && resolve(agent) === here) done('Installed (starts at login, restarts if it crashes)')
+const running = (await bridgeConnection()) !== undefined
+if (agent && resolve(agent) === here && running) done('Installed and running (starts at login, restarts if it crashes)')
 else if (!isPaired()) skip('Waiting for a linked phone')
-else {
+else if (agent && resolve(agent) === here) {
+  // A bridge WhatsApp logged out exits cleanly, and launchd only restarts crashes: after linking
+  // again, the agent is still installed but nothing is running.
+  if (await ask('The background bridge is installed but not running. Start it?', true)) {
+    sh('sh', [join(REPO, 'scripts', 'agent.sh'), 'install'])
+  } else later('Not started', 'pnpm agent:install')
+} else {
   const question = agent
     ? `The background bridge runs another copy (${agent}). Point it at this folder?`
     : 'Keep the bridge running in the background (starts at login)?'
@@ -142,7 +154,8 @@ step(6, 'Register with Claude Code')
 const reg = await claudeRegistration()
 const claude = claudeBin() ?? 'claude'
 const addArgs = ['mcp', 'add', 'whatsapp', '--scope', 'user', '--', 'node', '--disable-warning=ExperimentalWarning', MCP_ENTRY]
-if (!reg.cli) later('Claude Code CLI not found', `claude ${addArgs.join(' ')}`)
+const addCommand = `claude ${addArgs.map(quote).join(' ')}`
+if (!reg.cli) later('Claude Code CLI not found', addCommand)
 else if (reg.registered && reg.entry && resolve(reg.entry) === MCP_ENTRY) done('Registered as "whatsapp"')
 else if (reg.registered) {
   if (await ask(`Claude Code runs another copy (${reg.entry ?? 'unknown'}). Point it at this folder?`, false)) {
@@ -150,7 +163,7 @@ else if (reg.registered) {
   } else later('Kept the other copy', 'claude mcp remove whatsapp --scope user, then pnpm run setup')
 } else if (await ask('Add the WhatsApp tools to Claude Code (all your projects)?', true)) {
   if (sh(claude, addArgs)) done('Registered. Restart Claude Code to load it.')
-} else later('Skipped', `claude ${addArgs.join(' ')}`)
+} else later('Skipped', addCommand)
 
 step(7, 'Menu bar icon (optional)')
 const menubar = agentTarget(MENUBAR_PLIST, '/build/whatsapp-status')

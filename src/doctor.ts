@@ -48,6 +48,10 @@ export function agentTarget(plist: string, suffix: string): string | undefined {
 
 // What Claude Code has registered as "whatsapp", if anything. `claude mcp get` starts the server
 // to report its status, hence the generous timeout.
+// The server path in the "Args:" line of `claude mcp get`. It starts at the first "/" after a
+// space and may itself contain spaces, so splitting on whitespace would cut it.
+export const entryFromArgs = (args: string): string | undefined => /(?:^|\s)(\/.*mcp\.ts)\s*$/.exec(args)?.[1]
+
 export function claudeBin(): string | undefined {
   const local = join(homedir(), '.local', 'bin', 'claude')
   return findBin('claude') ?? (existsSync(local) ? local : undefined)
@@ -59,9 +63,18 @@ export async function claudeRegistration(): Promise<{ cli: boolean; entry?: stri
   try {
     const { stdout } = await run(claude, ['mcp', 'get', 'whatsapp'], { timeout: 30_000 })
     const args = /^\s*Args:\s*(.*)$/m.exec(stdout)?.[1] ?? ''
-    return { cli: true, registered: true, entry: args.split(/\s+/).find(a => a.endsWith('mcp.ts')) }
+    return { cli: true, registered: true, entry: entryFromArgs(args) }
   } catch {
     return { cli: true, registered: false }
+  }
+}
+
+// The bridge's connection state, or undefined if no bridge answers on the socket.
+export async function bridgeConnection(): Promise<string | undefined> {
+  try {
+    return String((await bridge('GET', '/status', 2000)).body.connection)
+  } catch {
+    return undefined
   }
 }
 
@@ -104,15 +117,14 @@ export async function runChecks(): Promise<Check[]> {
       : { level: 'fail', title: 'No phone linked yet', fix: 'pnpm run setup (or pnpm bridge and scan the QR code)' },
   )
 
-  try {
-    const r = await bridge('GET', '/status', 2000)
-    const connection = String(r.body.connection)
+  const connection = await bridgeConnection()
+  if (connection) {
     add(
       connection === 'open'
         ? { level: 'ok', title: 'Bridge running and connected to WhatsApp' }
         : { level: 'warn', title: `Bridge running, but the connection is "${connection}"`, fix: 'tail -f ~/.whatsapp-mcp/bridge.log' },
     )
-  } catch {
+  } else {
     add({
       level: paired ? 'fail' : 'info',
       title: 'Bridge not running',
