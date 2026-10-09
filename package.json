@@ -1,6 +1,6 @@
 {
   "name": "wsp-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read and (carefully) reply to your personal WhatsApp from Claude Code, over MCP.",
   "license": "MIT",
   "author": "le-quesne",
