@@ -66,13 +66,20 @@ export function claudeBin(): string | undefined {
   return findBin('claude') ?? (existsSync(local) ? local : undefined)
 }
 
-export async function claudeRegistration(): Promise<{ cli: boolean; entry?: string; registered: boolean }> {
+export const DEFAULT_HOME = join(homedir(), '.whatsapp-mcp')
+
+// The data folder in `claude mcp get`'s "Environment:" lines ("    WA_MCP_HOME=/path"), or the default.
+export const homeFromMcpGet = (stdout: string): string =>
+  /^\s*WA_MCP_HOME=(.*)$/m.exec(stdout)?.[1]?.trim() || DEFAULT_HOME
+
+// `home` is the data folder the registered server reads: its WA_MCP_HOME, or the default.
+export async function claudeRegistration(): Promise<{ cli: boolean; entry?: string; home?: string; registered: boolean }> {
   const claude = claudeBin()
   if (!claude) return { cli: false, registered: false }
   try {
     const { stdout } = await run(claude, ['mcp', 'get', 'whatsapp'], { timeout: 30_000 })
     const args = /^\s*Args:\s*(.*)$/m.exec(stdout)?.[1] ?? ''
-    return { cli: true, registered: true, entry: entryFromArgs(args) }
+    return { cli: true, registered: true, entry: entryFromArgs(args), home: homeFromMcpGet(stdout) }
   } catch {
     return { cli: true, registered: false }
   }
@@ -240,6 +247,13 @@ export async function runChecks(): Promise<Check[]> {
       level: 'warn',
       title: 'Claude Code runs another copy of this server',
       detail: tilde(reg.entry),
+      fix: 'pnpm run setup (offers to point it here)',
+    })
+  } else if (resolve(reg.home ?? DEFAULT_HOME) !== resolve(HOME)) {
+    add({
+      level: 'warn',
+      title: 'Claude Code reads another data folder',
+      detail: tilde(reg.home ?? DEFAULT_HOME),
       fix: 'pnpm run setup (offers to point it here)',
     })
   } else {

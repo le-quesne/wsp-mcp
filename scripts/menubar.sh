@@ -5,6 +5,7 @@ LABEL=com.whatsapp-mcp.menubar
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$DIR/build/whatsapp-status"
+DATA="${WA_MCP_HOME:-$HOME/.whatsapp-mcp}"
 DOMAIN="gui/$(id -u)"
 
 case "${1:-}" in
@@ -23,6 +24,7 @@ case "${1:-}" in
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array><string>$BIN</string></array>
+  <key>EnvironmentVariables</key><dict><key>WA_MCP_HOME</key><string>$DATA</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ProcessType</key><string>Interactive</string>

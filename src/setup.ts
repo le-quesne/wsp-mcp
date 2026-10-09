@@ -19,6 +19,7 @@ import { CONFIG_PATH, ensureHome, HOME, loadConfig, WHISPER_MODEL } from './conf
 import {
   AGENT_PLIST,
   agentDataDir,
+  DEFAULT_HOME,
   agentTarget,
   bridgeConnection,
   claudeBin,
@@ -265,12 +266,20 @@ else if (ownAgent()) {
 step(6, 'Register with Claude Code')
 const reg = await claudeRegistration()
 const claude = claudeBin() ?? 'claude'
-const addArgs = ['mcp', 'add', 'whatsapp', '--scope', 'user', '--', 'node', '--disable-warning=ExperimentalWarning', MCP_ENTRY]
+// A custom data folder goes into the registration too: Claude Code doesn't start the server with
+// this shell's environment.
+const addArgs = [
+  'mcp', 'add', 'whatsapp', '--scope', 'user',
+  ...(resolve(HOME) === resolve(DEFAULT_HOME) ? [] : ['-e', `WA_MCP_HOME=${HOME}`]),
+  '--', 'node', '--disable-warning=ExperimentalWarning', MCP_ENTRY,
+]
+const ours = reg.registered && !!reg.entry && resolve(reg.entry) === MCP_ENTRY && resolve(reg.home ?? DEFAULT_HOME) === resolve(HOME)
 const addCommand = `claude ${addArgs.map(quote).join(' ')}`
 if (!reg.cli) later('Claude Code CLI not found', addCommand)
-else if (reg.registered && reg.entry && resolve(reg.entry) === MCP_ENTRY) done('Registered as "whatsapp"')
+else if (ours) done('Registered as "whatsapp"')
 else if (reg.registered) {
-  if (await ask(`Claude Code runs another copy (${reg.entry ?? 'unknown'}). Point it at this folder?`, false)) {
+  const other = `code ${tilde(reg.entry ?? 'unknown')}, data ${tilde(reg.home ?? DEFAULT_HOME)}`
+  if (await ask(`Claude Code's "whatsapp" belongs to another setup (${other}). Point it at this one?`, false)) {
     if (sh(claude, ['mcp', 'remove', 'whatsapp', '--scope', 'user'])) sh(claude, addArgs)
   } else later('Kept the other copy', 'claude mcp remove whatsapp --scope user, then pnpm run setup')
 } else if (await ask('Add the WhatsApp tools to Claude Code (all your projects)?', true)) {
@@ -279,7 +288,11 @@ else if (reg.registered) {
 
 step(7, 'Menu bar icon (optional)')
 const menubar = agentTarget(MENUBAR_PLIST, '/build/whatsapp-status')
-if (menubar && resolve(menubar) === join(REPO, 'build', 'whatsapp-status')) done('Installed')
+if (
+  menubar &&
+  resolve(menubar) === join(REPO, 'build', 'whatsapp-status') &&
+  resolve(agentDataDir(MENUBAR_PLIST) ?? '') === resolve(HOME)
+) done('Installed')
 else if (!findBin('swiftc')) later('Needs the Xcode command line tools', 'xcode-select --install, then pnpm menubar:install')
 else if (await ask('Add a menu bar icon that shows whether the bridge is connected?', false)) {
   sh('sh', [join(REPO, 'scripts', 'menubar.sh'), 'install'])

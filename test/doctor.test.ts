@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { agentDataDir, agentTarget, entryFromArgs, isPaired } from '../src/doctor.ts'
+import { agentDataDir, agentTarget, entryFromArgs, homeFromMcpGet, isPaired } from '../src/doctor.ts'
 
 test('the registered server path survives spaces in the folder name', () => {
   assert.equal(
@@ -49,4 +49,11 @@ test('the agent plist tells which data folder it uses, the default for older pli
   writeFileSync(plist, `<dict><key>PATH</key><string>/usr/bin</string></dict>`)
   assert.equal(agentDataDir(plist), join(homedir(), '.whatsapp-mcp'))
   assert.equal(agentDataDir(join(dir, 'missing.plist')), undefined)
+})
+
+test('the data folder Claude Code passes to the server is read from `claude mcp get`', () => {
+  const get = (env: string) =>
+    `whatsapp:\n  Scope: User config\n  Command: node\n  Args: --x /a/src/mcp.ts\n  Environment:\n${env}\nTo remove this server, run: …`
+  assert.equal(homeFromMcpGet(get('    WA_MCP_HOME=/Users/ana/wsp data')), '/Users/ana/wsp data')
+  assert.equal(homeFromMcpGet(get('')), join(homedir(), '.whatsapp-mcp'))
 })
