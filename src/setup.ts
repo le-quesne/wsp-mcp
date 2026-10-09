@@ -127,7 +127,10 @@ async function askPhone(): Promise<string | undefined> {
   return answer || undefined
 }
 const agentScript = join(REPO, 'scripts', 'agent.sh')
-const ownAgent = () => resolve(agentTarget(AGENT_PLIST, '/src/bridge.ts') ?? '') === join(REPO, 'src', 'bridge.ts')
+// The installed agent is this setup's when it runs this code AND uses this data folder.
+const ownAgent = () =>
+  resolve(agentTarget(AGENT_PLIST, '/src/bridge.ts') ?? '') === join(REPO, 'src', 'bridge.ts') &&
+  resolve(agentDataDir(AGENT_PLIST) ?? '') === resolve(HOME)
 if (isPaired()) {
   done('Already linked')
   // A link by code left the number in the agent's plist (setup stopped before cleaning it up).
@@ -149,7 +152,7 @@ if (isPaired()) {
   // another copy or another data folder, linking here replaces it, and a failed link removes it.
   const otherTarget = agentTarget(AGENT_PLIST, '/src/bridge.ts')
   const otherData = agentDataDir(AGENT_PLIST)
-  if (otherTarget && (!ownAgent() || resolve(otherData ?? '') !== resolve(HOME))) {
+  if (otherTarget && !ownAgent()) {
     say(`  A background bridge is already installed for another setup:`)
     say(`    code ${tilde(otherTarget)}, data ${tilde(otherData ?? '')}`)
     if (!(await ask('Replace it with this one? Its phone stays linked in its data folder, but it stops syncing.', false))) {
@@ -229,21 +232,20 @@ else if (await ask('Show the QR code now?', true)) {
 
 step(5, 'Run the bridge in the background')
 const agent = agentTarget(AGENT_PLIST, '/src/bridge.ts')
-const here = join(REPO, 'src', 'bridge.ts')
 const running = (await bridgeConnection()) !== undefined
-if (agent && resolve(agent) === here && running) done('Installed and running (starts at login, restarts if it crashes)')
+if (ownAgent() && running) done('Installed and running (starts at login, restarts if it crashes)')
 else if (!isPaired()) skip('Waiting for a linked phone')
-else if (agent && resolve(agent) === here) {
+else if (ownAgent()) {
   // A bridge WhatsApp logged out exits cleanly, and launchd only restarts crashes: after linking
   // again, the agent is still installed but nothing is running.
   if (await ask('The background bridge is installed but not running. Start it?', true)) {
-    sh('sh', [join(REPO, 'scripts', 'agent.sh'), 'install'])
+    sh('sh', [agentScript, 'install'])
   } else later('Not started', 'pnpm agent:install')
 } else {
   const question = agent
-    ? `The background bridge runs another copy (${agent}). Point it at this folder?`
+    ? `The background bridge belongs to another setup (code ${tilde(agent)}, data ${tilde(agentDataDir(AGENT_PLIST) ?? '')}). Replace it with this one?`
     : 'Keep the bridge running in the background (starts at login)?'
-  if (await ask(question, !agent)) sh('sh', [join(REPO, 'scripts', 'agent.sh'), 'install'])
+  if (await ask(question, !agent)) sh('sh', [agentScript, 'install'])
   else later('Skipped', 'pnpm agent:install')
 }
 
