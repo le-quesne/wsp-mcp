@@ -34,7 +34,8 @@ All notable changes to this project are documented here. The format follows
   for `account`, which only a confirmed link writes.
 - After a pairing code that was never typed, the next attempt tried to log in with it instead of
   asking for a new link. The bridge now drops the unfinished attempt and starts over.
-- The background bridge ignored a custom data folder (`WA_MCP_HOME`): the agent now passes it on.
+- A custom data folder (`WA_MCP_HOME`) only reached the terminal bridge. The background bridge, the menu
+  bar app and the Claude Code registration now use it too.
 
 ## [0.1.0] - 2026-10-08
 
