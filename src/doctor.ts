@@ -27,11 +27,13 @@ export type Check = { level: Level; title: string; detail?: string; fix?: string
 
 export const tilde = (p: string) => (p.startsWith(homedir()) ? `~${p.slice(homedir().length)}` : p)
 
-// The session file exists from the first QR code on; `me` only appears once a phone linked it.
-export function isPaired(): boolean {
+// Whether a phone has really linked this session. `account` (the device identity the phone signs)
+// is only written when the link succeeds, by QR or by code. Neither the file nor `me` will do: the
+// file exists from the first QR on, and asking for a pairing code already fills in `me`.
+export function isPaired(authDir = AUTH_DIR): boolean {
   try {
-    const creds = JSON.parse(readFileSync(join(AUTH_DIR, 'creds.json'), 'utf8'))
-    return typeof creds?.me?.id === 'string'
+    const creds = JSON.parse(readFileSync(join(authDir, 'creds.json'), 'utf8'))
+    return !!creds?.account
   } catch {
     return false
   }

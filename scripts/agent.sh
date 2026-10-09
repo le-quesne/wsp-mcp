@@ -10,8 +10,9 @@ DOMAIN="gui/$(id -u)"
 
 case "${1:-}" in
   install)
-    # creds.json exists from the first QR code on; "me" only appears once a phone linked it.
-    if ! grep -q '"me":' "$DATA/auth/creds.json" 2>/dev/null; then
+    # creds.json exists from the first QR code on, and asking for a pairing code fills in "me";
+    # "account" is only written once a phone really linked it.
+    if ! grep -q '"account":' "$DATA/auth/creds.json" 2>/dev/null; then
       echo "Not paired yet. Run \`pnpm bridge\` in a terminal first and scan the QR code." >&2
       exit 1
     fi

@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
 - After linking, setup waits for the first history import to settle before handing the session to
   the background bridge.
 
+### Fixed
+
+- A pairing code that was requested but never typed counted as a linked phone: asking for the code
+  already fills in the session's `me`. The bridge, the background agent, setup and doctor now wait
+  for `account`, which only a confirmed link writes.
+
 ## [0.1.0] - 2026-10-08
 
 First public release.

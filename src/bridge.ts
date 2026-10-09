@@ -98,8 +98,9 @@ const safe =
 
 async function connect(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
-  // QR pairing never sets `registered`; having our own account id is what "paired" means.
-  const paired = state.creds.registered || !!state.creds.me?.id
+  // `account` is only written when a phone accepts the link (QR or code). `me` isn't proof:
+  // asking for a pairing code fills it in before anyone types the code.
+  const paired = !!state.creds.account
   if (!paired && !process.stdout.isTTY && !pairPhone) {
     log('Not paired yet. Run `pnpm bridge` in a terminal and scan the QR code.')
     shutdown(NEEDS_USER)

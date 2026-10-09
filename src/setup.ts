@@ -123,6 +123,8 @@ else if (PHONE !== undefined) {
     process.exit(1)
   }
   say('  Asking WhatsApp for a pairing code…')
+  // Everything the bridge says is kept, so a failure can show why.
+  const recent: string[] = []
   const result = await pairWithCode({
     command: process.execPath,
     args: ['--disable-warning=ExperimentalWarning', join(REPO, 'src', 'bridge.ts'), '--phone', digits],
@@ -136,7 +138,11 @@ else if (PHONE !== undefined) {
       say()
     },
     onLine: line => {
-      if (/History sync|Connected as|Connection closed|Another bridge|logged/.test(line)) say(styleText('dim', `  ${line}`))
+      recent.push(line)
+      if (recent.length > 40) recent.shift()
+      if (/History sync|Connected as|Connection closed|Another bridge|logged|Fatal|Unhandled|rror|Could not/.test(line)) {
+        say(styleText('dim', `  ${line}`))
+      }
     },
   })
   if (result === 'paired') done('Linked')
@@ -144,8 +150,12 @@ else if (PHONE !== undefined) {
     say(
       result === 'timeout'
         ? '  The code wasn\'t entered within 5 minutes. Run setup again for a new one.'
-        : '  The bridge stopped before the phone was linked (see the lines above).',
+        : '  The bridge stopped before the phone was linked.',
     )
+    if (recent.length) {
+      say('  Last lines from the bridge:')
+      for (const line of recent) say(styleText('dim', `    ${line}`))
+    }
     process.exit(1)
   }
 } else if (!INTERACTIVE) later('Needs a terminal to show the QR code, or --phone to link with a code', 'pnpm run setup')
