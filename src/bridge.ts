@@ -24,6 +24,7 @@ import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { isAllowed } from './allow.ts'
 import { findBin } from './bin.ts'
+import { forgetUnfinishedLink } from './pair.ts'
 import { AUTH_DIR, CONFIG_PATH, SOCKET_PATH, ensureHome, loadConfig } from './config.ts'
 import { confirmSend } from './confirm.ts'
 import { openWriter } from './db.ts'
@@ -101,6 +102,10 @@ async function connect(): Promise<void> {
   // `account` is only written when a phone accepts the link (QR or code). `me` isn't proof:
   // asking for a pairing code fills it in before anyone types the code.
   const paired = !!state.creds.account
+  if (forgetUnfinishedLink(state.creds)) {
+    await saveCreds()
+    log('Dropped an unfinished pairing attempt; asking for a new link.')
+  }
   if (!paired && !process.stdout.isTTY && !pairPhone) {
     log('Not paired yet. Run `pnpm bridge` in a terminal and scan the QR code.')
     shutdown(NEEDS_USER)

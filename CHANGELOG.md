@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 - A pairing code that was requested but never typed counted as a linked phone: asking for the code
   already fills in the session's `me`. The bridge, the background agent, setup and doctor now wait
   for `account`, which only a confirmed link writes.
+- After a pairing code that was never typed, the next attempt tried to log in with it instead of
+  asking for a new link. The bridge now drops the unfinished attempt and starts over.
 
 ## [0.1.0] - 2026-10-08
 

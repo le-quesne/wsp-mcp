@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { pairingCodeIn, pairWithCode, phoneDigits } from '../src/pair.ts'
+import { forgetUnfinishedLink, pairingCodeIn, pairWithCode, phoneDigits } from '../src/pair.ts'
 
 test('phone numbers become digits, and nonsense is refused', () => {
   assert.equal(phoneDigits('+56 9 1234 5678'), '56912345678')
@@ -43,6 +43,19 @@ test('shows the code, waits for the link, lets the history import settle, then s
   assert.deepEqual(codes, ['WXYZ-1234'])
 })
 
+test('a new code replaces the earlier one', async () => {
+  const codes: [string, boolean][] = []
+  const bridge = fakeBridge(`
+    console.log('Pairing code: AAAA-1111')
+    console.log('Pairing code: AAAA-1111')
+    setTimeout(() => console.log('Pairing code: BBBB-2222'), 100)
+    setTimeout(() => fs.writeFileSync(LINKED, ''), 200)
+    setInterval(() => {}, 1000)
+  `)
+  await pairWithCode({ ...bridge, onCode: (c, again) => codes.push([c, again]), quietMs: 200 })
+  assert.deepEqual(codes, [['AAAA-1111', false], ['BBBB-2222', true]])
+})
+
 test('gives up when nobody types the code', async () => {
   const bridge = fakeBridge(`console.log('Pairing code: WXYZ-1234'); setInterval(() => {}, 1000)`)
   assert.equal(await pairWithCode({ ...bridge, onCode: () => {}, pairTimeoutMs: 500 }), 'timeout')
@@ -63,4 +76,17 @@ test('a history import that never goes quiet is still cut off', async () => {
   const started = Date.now()
   assert.equal(await pairWithCode({ ...bridge, onCode: () => {}, quietMs: 500, syncCapMs: 2000 }), 'paired')
   assert.ok(Date.now() - started < 6000)
+})
+
+test('an unfinished code request is forgotten, a linked session is kept', () => {
+  const pending = { registered: false, pairingCode: 'WXYZ1234', me: { id: '56912345678@s.whatsapp.net', name: '~' } }
+  assert.equal(forgetUnfinishedLink(pending), true)
+  assert.equal(pending.me, undefined)
+  assert.equal(pending.pairingCode, undefined)
+
+  const linked = { account: { details: 'x' }, me: { id: '56912345678:12@s.whatsapp.net' } }
+  assert.equal(forgetUnfinishedLink(linked), false)
+  assert.deepEqual(linked.me, { id: '56912345678:12@s.whatsapp.net' })
+
+  assert.equal(forgetUnfinishedLink({}), false, 'a fresh session has nothing to forget')
 })

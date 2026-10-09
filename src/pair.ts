@@ -4,6 +4,16 @@
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
+// A pairing code that was requested but never typed leaves `me` in the session, and with `me`
+// Baileys tries to log in instead of asking for a new link: no new code, no QR, just a rejection.
+// Until a phone confirms the link (`account`), there's nothing worth keeping in `me`.
+export function forgetUnfinishedLink(creds: { account?: unknown; me?: unknown; pairingCode?: unknown }): boolean {
+  if (creds.account || !creds.me) return false
+  creds.me = undefined
+  creds.pairingCode = undefined
+  return true
+}
+
 // WhatsApp wants the full international number, digits only.
 export function phoneDigits(input: string): string | undefined {
   const digits = input.replace(/\D/g, '')
@@ -19,7 +29,7 @@ export type PairOptions = {
   args: string[]
   cwd: string
   isPaired: () => boolean
-  onCode: (code: string) => void
+  onCode: (code: string, replacesEarlier: boolean) => void
   onLine?: (line: string) => void
   // How long the person has to type the code.
   pairTimeoutMs?: number
@@ -62,14 +72,16 @@ export function pairWithCode(o: PairOptions): Promise<PairResult> {
       settleLater()
     }
 
-    let codeShown = false
+    // A reconnect while the person is typing makes the bridge ask for a new code, and only the
+    // newest one works: pass each one on.
+    let lastCode: string | undefined
     for (const stream of [child.stdout, child.stderr]) {
       createInterface({ input: stream }).on('line', line => {
         o.onLine?.(line)
         const code = pairingCodeIn(line)
-        if (code && !codeShown) {
-          codeShown = true
-          o.onCode(code)
+        if (code && code !== lastCode) {
+          o.onCode(code, lastCode !== undefined)
+          lastCode = code
         }
         if (linked && /History sync/.test(line)) settleLater()
       })

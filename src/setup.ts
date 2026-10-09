@@ -130,11 +130,14 @@ else if (PHONE !== undefined) {
     args: ['--disable-warning=ExperimentalWarning', join(REPO, 'src', 'bridge.ts'), '--phone', digits],
     cwd: REPO,
     isPaired,
-    onCode: code => {
+    onCode: (code, replacesEarlier) => {
       say()
-      say(`  PAIRING CODE: ${styleText('bold', code)}`)
-      say('  On your phone: WhatsApp → Settings → Linked devices → Link a device →')
-      say('  "Link with phone number instead", and type the code. Waiting up to 5 minutes…')
+      if (replacesEarlier) say(`  NEW PAIRING CODE (the previous one no longer works): ${styleText('bold', code)}`)
+      else {
+        say(`  PAIRING CODE: ${styleText('bold', code)}`)
+        say('  On your phone: WhatsApp → Settings → Linked devices → Link a device →')
+        say('  "Link with phone number instead", and type the code. Waiting up to 5 minutes…')
+      }
       say()
     },
     onLine: line => {
