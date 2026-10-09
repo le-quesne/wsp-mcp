@@ -43,6 +43,10 @@ CREATE INDEX IF NOT EXISTS messages_chat_ts ON messages (chat_jid, ts);
 CREATE INDEX IF NOT EXISTS messages_ts ON messages (ts);
 CREATE INDEX IF NOT EXISTS messages_sender ON messages (sender_jid);
 
+-- What the bridge sent for Claude, so the writing profile (voice.ts) only learns from what the
+-- user typed themselves.
+CREATE TABLE IF NOT EXISTS sent_by_bridge (chat_jid TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (chat_jid, id));
+
 -- What it takes to download a message's file later (WhatsApp only sends the keys once).
 CREATE TABLE IF NOT EXISTS media (
   chat_jid TEXT NOT NULL,

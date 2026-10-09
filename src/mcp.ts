@@ -19,6 +19,7 @@ import {
   searchMessages,
   stats,
 } from './queries.ts'
+import { describeVoice, lintVoice, loadVoice, ownBursts } from './voice.ts'
 
 const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url))
 const START_BRIDGE = `Ask the user to start the bridge: cd "${PROJECT_DIR}" && pnpm bridge`
@@ -74,7 +75,9 @@ const server = new McpServer(
       'WhatsApp bans numbers that behave like bots, and this is the user\'s own number: never send the same text to ' +
       'several people, never message a list of people in a row, and avoid writing to people who never wrote to the ' +
       'user unless they ask for exactly that. ' +
-      'Times are local (YYYY-MM-DD HH:mm). Reading does not send read receipts.',
+      'Times are local (YYYY-MM-DD HH:mm). Reading does not send read receipts. ' +
+      'What you send goes out as the user, so it should sound like them: before drafting, call style_guide with the ' +
+      'chat (how they write, and their own recent messages there), then pass short messages as `parts` to send_message.',
   },
 )
 
@@ -248,6 +251,30 @@ server.registerTool(
 )
 
 server.registerTool(
+  'style_guide',
+  {
+    title: 'How the user writes',
+    description:
+      'Call before drafting anything that will be sent as the user. Returns how they write on WhatsApp (length, ' +
+      'splitting into several messages, punctuation, laughter, emoji, their usual words and the ones they never use), ' +
+      'their written archetype if they made one, how they write in `chat` specifically, and their own recent messages ' +
+      'there to imitate.',
+    inputSchema: { chat: chatParam.optional() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ chat }) =>
+    withDb(db => {
+      const { profile, notes } = loadVoice()
+      if (!chat) return describeVoice(profile, notes)
+      const { jid } = resolveChat(db, chat)
+      return describeVoice(profile, notes, { jid, group: jid.endsWith('@g.us'), bursts: ownBursts(db, jid) })
+    }),
+)
+
+// "typing…" for about as long as a person takes to type it.
+const typingMsFor = (text: string) => Math.min(12_000, Math.max(1_500, 800 + text.length * 120))
+
+server.registerTool(
   'send_message',
   {
     title: 'Send WhatsApp message',
@@ -259,14 +286,24 @@ server.registerTool(
       'people), do not work through a list of people, and do not message people who never wrote to them unless asked. ' +
       'Messages to a different person than the last one are held so they go out some seconds apart (15 by default), ' +
       'so several sends take a while: ' +
-      'send them one at a time and do not resend while one is pending.',
+      'send them one at a time and do not resend while one is pending. ' +
+      'Write it in the user\'s voice (style_guide) and pass it as `parts`: 1–6 short messages sent one after another ' +
+      'with "typing…" before each, the way people text. If they built a writing profile, every part is checked ' +
+      'against it first: when something is unlike them nothing is sent and the problems come back to fix. ' +
+      'Set `verbatim` only when the user dictated the exact wording.',
     inputSchema: {
       chat: chatParam,
-      text: z.string().min(1).max(2000),
+      parts: z.array(z.string().min(1).max(2000)).min(1).max(6).optional().describe('One message each, in order'),
+      text: z.string().min(1).max(2000).optional().describe('A single message; prefer `parts`'),
+      verbatim: z.boolean().default(false).describe('The user dictated this exact text: skip the style check'),
+      typing: z.boolean().default(true).describe('Show "typing…" before each message'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  async ({ chat, text }) => {
+  async ({ chat, parts, text, verbatim, typing }) => {
+    if (parts && text) return fail('Pass either `parts` or `text`, not both.')
+    const messages = (parts ?? (text ? [text] : [])).map(p => p.trim()).filter(Boolean)
+    if (!messages.length) return fail('Pass `parts` (preferred) or `text`.')
     const db = openReader()
     if (!db) return fail(`No WhatsApp data yet. ${START_BRIDGE}`)
     let jid: string
@@ -278,17 +315,35 @@ server.registerTool(
     } finally {
       db.close()
     }
-    let r: BridgeReply
-    try {
-      r = await bridge('POST', '/send', SEND_TIMEOUT_MS, { jid, text })
-    } catch (err) {
-      return bridgeSendError(err)
+    const { profile } = loadVoice()
+    if (profile && !verbatim) {
+      const issues = lintVoice(messages, profile, jid, jid.endsWith('@g.us'))
+      if (issues.length) {
+        return fail(
+          `Not sent: this doesn't sound like the user.\n- ${issues.join('\n- ')}\n` +
+            'Rewrite it in their voice (style_guide) and send again. Use verbatim only if they dictated this exact text.',
+        )
+      }
     }
-    if (r.status === 200 && r.body.status === 'sent') return ok(`Sent to ${r.body.to}.${sentNote(r.body)}`)
-    if (r.status === 200 && r.body.status === 'cancelled') {
-      return ok(`The user did not approve sending to ${r.body.to} (cancelled or timed out). Nothing was sent.`)
+    let to = ''
+    let notes = ''
+    for (const [i, message] of messages.entries()) {
+      let r: BridgeReply
+      try {
+        r = await bridge('POST', '/send', SEND_TIMEOUT_MS, { jid, text: message, typingMs: typing ? typingMsFor(message) : 0 })
+      } catch (err) {
+        if (i === 0) return bridgeSendError(err)
+        return fail(`Sent ${i} of ${messages.length} messages, then: ${bridgeSendError(err).content[0].text}`)
+      }
+      const done = i ? `Sent ${i} of ${messages.length} messages. ` : ''
+      if (r.status === 200 && r.body.status === 'cancelled') {
+        return ok(`${done}The user did not approve sending to ${r.body.to} (cancelled or timed out). The rest was not sent.`)
+      }
+      if (r.status !== 200 || r.body.status !== 'sent') return fail(done + String(r.body.error ?? `Bridge error (HTTP ${r.status})`))
+      to = String(r.body.to)
+      notes += sentNote(r.body)
     }
-    return fail(String(r.body.error ?? `Bridge error (HTTP ${r.status})`))
+    return ok(`Sent ${messages.length === 1 ? '' : `${messages.length} messages `}to ${to}.${notes}`)
   },
 )
 
@@ -304,11 +359,12 @@ server.registerTool(
     inputSchema: {
       chat: chatParam,
       path: z.string().min(1).describe('Absolute path to a local file'),
-      caption: z.string().max(1000).optional(),
+      caption: z.string().max(1000).optional().describe("In the user's voice, like send_message parts"),
+      verbatim: z.boolean().default(false).describe('The user dictated this exact caption: skip the style check'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  async ({ chat, path, caption }) => {
+  async ({ chat, path, caption, verbatim }) => {
     const db = openReader()
     if (!db) return fail(`No WhatsApp data yet. ${START_BRIDGE}`)
     let jid: string
@@ -320,6 +376,9 @@ server.registerTool(
     } finally {
       db.close()
     }
+    const { profile } = loadVoice()
+    const issues = caption && profile && !verbatim ? lintVoice([caption], profile, jid, jid.endsWith('@g.us')) : []
+    if (issues.length) return fail(`Not sent: the caption doesn't sound like the user.\n- ${issues.join('\n- ')}\nRewrite it (style_guide).`)
     let r: BridgeReply
     try {
       r = await bridge('POST', '/send-file', SEND_TIMEOUT_MS + 300_000, { jid, path, caption })

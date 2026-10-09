@@ -18,6 +18,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
   useMultiFileAuthState,
+  type WAMessage,
   type WASocket,
 } from 'baileys'
 import pino from 'pino'
@@ -238,6 +239,13 @@ async function connect(): Promise<void> {
 
 type Reply = [status: number, body: Record<string, unknown>]
 
+// Stored like any message of the user's, and marked as ours so the writing profile skips it.
+function recordSent(sent: WAMessage): void {
+  store.storeMessage(sent, true)
+  const chat = store.canon(sent.key.remoteJid ?? '')
+  if (chat && sent.key.id) store.db.prepare('INSERT OR IGNORE INTO sent_by_bridge (chat_jid, id) VALUES (?, ?)').run(chat, sent.key.id)
+}
+
 // One send at a time: the dialog, the pacing and the typing all assume it.
 let sendQueue: Promise<unknown> = Promise.resolve()
 
@@ -303,7 +311,7 @@ async function handleSend(body: unknown): Promise<Reply> {
       if (typing) await s.sendPresenceUpdate('unavailable').catch(() => {})
     }
     lastSend = { chat, at: Date.now() }
-    if (sent) store.storeMessage(sent, true)
+    if (sent) recordSent(sent)
     log(`Sent a message to ${who}.`)
     return [200, { status: 'sent', to: who, id: sent?.key.id ?? null, waited, copies, pace: config.minSecondsBetweenRecipients }]
   })
@@ -397,7 +405,7 @@ async function handleSendFile(body: unknown): Promise<Reply> {
       logger.level = prev
     }
     lastSend = { chat, at: Date.now() }
-    if (sent) store.storeMessage(sent, true)
+    if (sent) recordSent(sent)
     log(`Sent a file to ${who}: ${basename(path)}`)
     return [200, { status: 'sent', to: who, id: sent?.key.id ?? null, waited, pace: config.minSecondsBetweenRecipients }]
   })

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- Writing like you. `pnpm run voice` learns how you text from your own messages, compared with what your
+  contacts write: length, messages per turn, punctuation, laughter, emoji, your words and the ones you never
+  use, and the same per chat (including words you use elsewhere but never in that chat). `--narrative` also
+  has Claude Code read a sample of your chats and write your archetype to `voice.md`.
+- `style_guide` tool: how you write, in general and in a given chat, with your own recent messages there.
+- `send_message` takes `parts`: several short messages in a row, each with "typing…" first. Every part is
+  checked against your profile before anything goes out, and what doesn't sound like you comes back to
+  rewrite (`verbatim` sends dictated text as is). `send_file` checks captions the same way.
+- The bridge marks the messages it sends (`sent_by_bridge`), so the profile only learns from what you typed.
+
 ## [0.2.0] - 2026-10-08
 
 ### Changed

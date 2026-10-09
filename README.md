@@ -28,7 +28,7 @@
 - *"Find the message where Ana sent the apartment address."*
 - *"What does Pedro's voice note say?"*
 - *"Tell Ana I'll be there at 8."* It goes out from your number right away, or after your click if you
-  turn that on.
+  turn that on, written the way you'd write it to Ana.
 
 ## Why this one
 
@@ -37,6 +37,10 @@
 - **Sends like a person, not a bot.** Messages to different people go out at least 15 s apart, Claude is
   told never to repeat a text or work through a list, and the bridge warns it when the same text already
   went to other chats. See [Avoiding a ban](#avoiding-a-ban).
+- **Writes like you.** `pnpm run voice` learns how you text from your own messages: length, how you split
+  a thought into several messages, punctuation, laughter, emoji, your words and the ones you never use, and
+  how all of that changes from chat to chat. Claude reads it before writing, and anything that doesn't sound
+  like you is sent back to rewrite instead of going out. See [Writing like you](#writing-like-you).
 - **Locks when you want them.** A list of who Claude may write to, and a dialog that asks you before every
   message, are one setting away. Both live in the bridge, outside Claude, so they hold even with Claude
   Code's permission prompts turned off.
@@ -112,8 +116,9 @@ Node 24 runs the TypeScript directly: there's no build step.
 | `get_messages` | A conversation (or every chat) in a time window, in order |
 | `search_messages` | Full-text search across chats, voice notes included |
 | `get_media` | The photo, voice note, video or document behind a message: photos as images, audio and video as transcripts |
-| `send_message` | Text to a chat, paced so it doesn't look like a bot |
-| `send_file` | A video, image or document to a chat, with the same pacing |
+| `style_guide` | How you write, in general and in a given chat, with your own recent messages there to imitate |
+| `send_message` | Text to a chat, as one or several short messages with "typing…" before each, checked against your style and paced so it doesn't look like a bot |
+| `send_file` | A video, image or document to a chat, with the same pacing (and the caption checked the same way) |
 
 ## Setting it up by hand
 
@@ -192,6 +197,45 @@ prompts off. To approve every message and limit who gets them:
 caption: videos as playable videos (over 16 MB they're compressed to 720p first, which needs
 ffmpeg), anything else as a document under 16 MB.
 
+## Writing like you
+
+Whatever Claude sends goes out as you, so it should read like you wrote it.
+
+```sh
+pnpm run voice              # learn your style from your own messages (local, takes seconds)
+pnpm run voice --narrative  # also have Claude read a sample of your chats and write your archetype
+```
+
+`pnpm run voice` measures your messages against what your contacts write and saves the result to
+`~/.whatsapp-mcp/voice.json`:
+
+- **Shape:** how long your messages are, how many you send in a row, how often a single word is enough.
+- **Punctuation and marks:** ¿ and ¡, final periods, "!", stretched words (*sooo*), accents, emoji, laughter.
+- **Words:** the short replies you use most, the words that are typically yours, and the ones your contacts
+  use and you never do (*q*, *porfa*, *jeje*… whatever it is for you).
+- **Each chat:** the same measures per chat, plus the words you use everywhere else but never there. That's
+  how it learns you swear with friends and never with a client, or say *estimado* only to customers.
+
+`--narrative` adds `~/.whatsapp-mcp/voice.md`: Claude Code reads a random sample of your conversations
+(about 1,500 of your messages, with what the other side said) and writes your archetype: rules, how you
+write to each kind of person, examples in your own words. That sample goes to Anthropic like anything
+else Claude reads, and it uses your Claude plan (`--model opus` for a deeper read; Sonnet by default).
+Read the file and fix anything that isn't you: Claude reads it before writing as you.
+
+Then, in Claude Code:
+
+- **`style_guide`** gives Claude all of that for the chat it's about to write in, plus your own recent
+  messages there to imitate.
+- **`send_message`** takes `parts`: a thought split into short messages, sent one after another with
+  "typing…" before each for about as long as you'd take to type it. Before anything goes out, every part
+  is checked against your profile. Something you never do (a ¿ when you never open questions, a period
+  when you never close with one, a word you never use in that chat…) means nothing is sent and Claude
+  gets the list to rewrite. When you dictate the exact words, Claude sends them as they are (`verbatim`).
+
+Every rule comes from your own history: if you do use periods, periods are fine. Messages the bridge
+sends are marked, so the profile only learns from what you typed (messages it sent before this version
+can't be told apart). Run `pnpm run voice` again every few months: the way people text drifts.
+
 ## Avoiding a ban
 
 WhatsApp bans numbers that behave like bots, and this is your own number. It doesn't publish its
@@ -213,6 +257,9 @@ limits, so these are cautious habits, not guarantees:
 
 - Everything stays on this Mac (`~/.whatsapp-mcp`, owner-only permissions). Only what a tool
   returns reaches the model.
+- Your writing profile (`voice.json`, and `voice.md` if you made one) contains your own words and stays
+  there with the rest of your data. `pnpm run voice --narrative` is the one step that sends a sample of
+  your chats to Claude on purpose.
 - `auth/` holds your WhatsApp session keys: anyone with that folder can read and send as you.
 - The bridge doesn't mark you online and reading doesn't send read receipts. Your phone keeps its
   notifications.

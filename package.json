@@ -27,6 +27,7 @@
     "mcp": "node --disable-warning=ExperimentalWarning src/mcp.ts",
     "setup": "node --disable-warning=ExperimentalWarning src/setup.ts",
     "doctor": "node --disable-warning=ExperimentalWarning src/doctor.ts",
+    "voice": "node --disable-warning=ExperimentalWarning src/voice-build.ts",
     "typecheck": "tsc --noEmit",
     "agent:install": "sh scripts/agent.sh install",
     "agent:uninstall": "sh scripts/agent.sh uninstall",
