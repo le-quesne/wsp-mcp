@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { norm, SCHEMA } from '../src/db.ts'
-import { getMessages, label, parseTime, phoneOf, resolveChat, searchMessages, UNTRUSTED, UserError } from '../src/queries.ts'
+import { getMessages, label, parseTime, phoneOf, resolveChat, sameTextElsewhere, searchMessages, UNTRUSTED, UserError } from '../src/queries.ts'
 
 // A made-up address book: two Josés, a group, and someone known only by an internal id (LID).
 function fixture(): DatabaseSync {
@@ -92,4 +92,19 @@ test('messages come back in order, with who wrote each one', () => {
 
 test('search ignores accents', () => {
   assert.match(searchMessages(fixture(), { query: 'si perfecto', limit: 10 }), /Sí, perfecto/)
+})
+
+test('the same text sent to other chats is counted, so the bridge can warn about it', () => {
+  const db = fixture()
+  const msg = db.prepare(`INSERT INTO messages (chat_jid, id, from_me, sender_jid, ts, type, text, text_norm)
+    VALUES (?, ?, ?, NULL, ?, 'text', ?, ?)`)
+  const promo = 'Hi! We have a new offer for you'
+  msg.run('56911111111@s.whatsapp.net', 'p1', 1, 1_790_000_000, promo, norm(promo))
+  msg.run('56922222222@s.whatsapp.net', 'p2', 1, 1_790_000_100, promo, norm(promo))
+  // Someone else writing the same thing to you doesn't count.
+  msg.run('5491133334444@s.whatsapp.net', 'p3', 0, 1_790_000_200, promo, norm(promo))
+  assert.equal(sameTextElsewhere(db, '5491133334444@s.whatsapp.net', promo, 1_789_990_000), 2)
+  assert.equal(sameTextElsewhere(db, '56911111111@s.whatsapp.net', promo, 1_789_990_000), 1, 'not counting the chat itself')
+  assert.equal(sameTextElsewhere(db, '5491133334444@s.whatsapp.net', promo, 1_790_000_050), 1, 'only since the window start')
+  assert.equal(sameTextElsewhere(db, '5491133334444@s.whatsapp.net', 'something else', 0), 0)
 })

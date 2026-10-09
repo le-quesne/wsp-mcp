@@ -208,19 +208,26 @@ export async function runChecks(): Promise<Check[]> {
   }
 
   const allowed = config.allowedRecipients
+  const who = allowed.some(a => a.trim() === '*')
+    ? 'anyone'
+    : `${allowed.length} recipient${allowed.length === 1 ? '' : 's'}`
   if (allowed.length === 0) {
-    add({ level: 'info', title: 'Sending is off: nobody is in allowedRecipients', fix: `Add numbers or chat ids to ${tilde(CONFIG_PATH)}` })
-  } else if (allowed.some(a => a.trim() === '*')) {
-    add({ level: 'warn', title: 'Sending is allowed to anyone ("*")', fix: `List the recipients instead in ${tilde(CONFIG_PATH)}` })
+    add({ level: 'info', title: 'Sending is off: allowedRecipients is empty', fix: `Edit ${tilde(CONFIG_PATH)}` })
   } else {
-    add({ level: 'ok', title: `Sending allowed to ${allowed.length} recipient${allowed.length === 1 ? '' : 's'}` })
-  }
-  if (!config.confirmBeforeSending) {
     add({
-      level: 'warn',
-      title: 'Messages go out without the confirmation dialog',
-      fix: `Remove "confirmBeforeSending": false from ${tilde(CONFIG_PATH)}`,
+      level: 'ok',
+      title: `Sending to ${who}, ${config.confirmBeforeSending ? 'each message after your click' : 'without asking'}`,
+      detail: 'WhatsApp can ban numbers that send like a bot. See "Avoiding a ban" in the README.',
     })
+    add(
+      config.minSecondsBetweenRecipients > 0
+        ? { level: 'ok', title: `Messages to different people go out at least ${config.minSecondsBetweenRecipients} s apart` }
+        : {
+            level: 'warn',
+            title: 'No pacing between messages to different people: a higher risk of a WhatsApp ban',
+            fix: `Set "minSecondsBetweenRecipients": 15 in ${tilde(CONFIG_PATH)}`,
+          },
+    )
   }
 
   const reg = await claudeRegistration()

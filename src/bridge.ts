@@ -24,13 +24,14 @@ import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { isAllowed } from './allow.ts'
 import { findBin } from './bin.ts'
+import { paceDelay } from './pace.ts'
 import { forgetUnfinishedLink } from './pair.ts'
 import { AUTH_DIR, CONFIG_PATH, SOCKET_PATH, ensureHome, loadConfig } from './config.ts'
 import { confirmSend } from './confirm.ts'
 import { openWriter } from './db.ts'
 import { extract } from './extract.ts'
 import { download, serial, transcribe, videoFrames } from './media.ts'
-import { displayName, label } from './queries.ts'
+import { displayName, label, sameTextElsewhere } from './queries.ts'
 import { Store, isStorableJid, type MediaRow } from './store.ts'
 
 const MAX_TEXT = 2000
@@ -237,12 +238,25 @@ async function connect(): Promise<void> {
 
 type Reply = [status: number, body: Record<string, unknown>]
 
-// One dialog at a time.
+// One send at a time: the dialog, the pacing and the typing all assume it.
 let sendQueue: Promise<unknown> = Promise.resolve()
+
+// The last message that went out, for pacing messages to different people (pace.ts).
+let lastSend: { chat: string; at: number } | undefined
+
+// Holds a send until it's far enough from the previous one to a different person. Returns the
+// seconds it waited, so the model knows why a batch is slow.
+async function pace(chat: string, who: string, minSeconds: number): Promise<number> {
+  const wait = paceDelay(lastSend, chat, Date.now(), minSeconds * 1000)
+  if (!wait) return 0
+  log(`Waiting ${Math.ceil(wait / 1000)} s before messaging ${who} (messages to different people go out ${minSeconds} s apart).`)
+  await sleep(wait)
+  return Math.ceil(wait / 1000)
+}
 
 const MAX_TYPING_MS = 90_000
 
-// Shows "escribiendo…" in the chat for `ms` before a message goes out. The recipient's app drops
+// Shows "typing…" in the chat for `ms` before a message goes out. The recipient's app drops
 // the indicator after ~10 s, so it is refreshed every 8 s. Composing only shows while we're
 // "available"; the caller goes back to unavailable afterwards so the phone keeps notifying.
 async function showTyping(s: WASocket, chat: string, ms: number): Promise<void> {
@@ -276,8 +290,11 @@ async function handleSend(body: unknown): Promise<Reply> {
     if (config.confirmBeforeSending && !(await confirmSend(who, text))) {
       return [200, { status: 'cancelled', to: who }]
     }
+    const waited = await pace(chat, who, config.minSecondsBetweenRecipients)
     if (!sock || connection !== 'open') return [503, { error: 'Lost the WhatsApp connection before sending.' }]
     const s = sock
+    // Counted before sending, so this message isn't one of them.
+    const copies = sameTextElsewhere(store.db, chat, text, Math.floor(Date.now() / 1000) - 86_400)
     let sent
     try {
       if (typing) await showTyping(s, chat, typing)
@@ -285,9 +302,10 @@ async function handleSend(body: unknown): Promise<Reply> {
     } finally {
       if (typing) await s.sendPresenceUpdate('unavailable').catch(() => {})
     }
+    lastSend = { chat, at: Date.now() }
     if (sent) store.storeMessage(sent, true)
     log(`Sent a message to ${who}.`)
-    return [200, { status: 'sent', to: who, id: sent?.key.id ?? null }]
+    return [200, { status: 'sent', to: who, id: sent?.key.id ?? null, waited, copies, pace: config.minSecondsBetweenRecipients }]
   })
   sendQueue = run.catch(() => {})
   return run
@@ -350,6 +368,7 @@ async function handleSendFile(body: unknown): Promise<Reply> {
     if (config.confirmBeforeSending && !(await confirmSend(who, `[file] ${basename(path)}`))) {
       return [200, { status: 'cancelled', to: who }]
     }
+    const waited = await pace(chat, who, config.minSecondsBetweenRecipients)
     if (!sock || connection !== 'open') return [503, { error: 'Lost the WhatsApp connection before sending.' }]
     const isVideo = /\.(mp4|mov|m4v)$/i.test(path)
     let file = path
@@ -377,9 +396,10 @@ async function handleSendFile(body: unknown): Promise<Reply> {
     } finally {
       logger.level = prev
     }
+    lastSend = { chat, at: Date.now() }
     if (sent) store.storeMessage(sent, true)
     log(`Sent a file to ${who}: ${basename(path)}`)
-    return [200, { status: 'sent', to: who, id: sent?.key.id ?? null }]
+    return [200, { status: 'sent', to: who, id: sent?.key.id ?? null, waited, pace: config.minSecondsBetweenRecipients }]
   })
   sendQueue = run.catch(() => {})
   return run

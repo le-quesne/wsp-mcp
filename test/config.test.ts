@@ -11,9 +11,11 @@ const { CONFIG_PATH, ensureHome, loadConfig } = await import('../src/config.ts')
 
 const write = (value: unknown) => writeFileSync(CONFIG_PATH, typeof value === 'string' ? value : JSON.stringify(value))
 
-test('a fresh install can send to nobody and asks before sending', () => {
+const DEFAULTS = { allowedRecipients: ['*'], confirmBeforeSending: false, autoTranscribe: true, minSecondsBetweenRecipients: 15 }
+
+test('a fresh install sends to anyone without asking, paced 15 s between different people', () => {
   ensureHome()
-  assert.deepEqual(loadConfig(), { allowedRecipients: [], confirmBeforeSending: true, autoTranscribe: true })
+  assert.deepEqual(loadConfig(), DEFAULTS)
 })
 
 test('the data folder and the config are private to the user', () => {
@@ -23,23 +25,37 @@ test('the data folder and the config are private to the user', () => {
   assert.equal(statSync(CONFIG_PATH).mode & 0o777, 0o600)
 })
 
-test('the confirmation dialog only turns off with an explicit false', () => {
-  for (const value of ['false', 0, null, 'no']) {
+test('the confirmation dialog only turns on with an explicit true', () => {
+  for (const value of ['true', 1, 'yes', null]) {
     write({ confirmBeforeSending: value })
-    assert.equal(loadConfig().confirmBeforeSending, true, String(value))
+    assert.equal(loadConfig().confirmBeforeSending, false, String(value))
   }
-  write({ confirmBeforeSending: false })
-  assert.equal(loadConfig().confirmBeforeSending, false)
+  write({ confirmBeforeSending: true })
+  assert.equal(loadConfig().confirmBeforeSending, true)
+})
+
+test('an allowlist that was written but is not a list sends to nobody, not to everybody', () => {
+  write({ allowedRecipients: '*' })
+  assert.deepEqual(loadConfig().allowedRecipients, [])
+  write({ allowedRecipients: [] })
+  assert.deepEqual(loadConfig().allowedRecipients, [])
+  write({})
+  assert.deepEqual(loadConfig().allowedRecipients, ['*'])
+})
+
+test('pacing takes any number of seconds from 0 up, and falls back to 15 otherwise', () => {
+  for (const [value, expected] of [[0, 0], [30, 30], [2.5, 2.5], [-1, 15], ['10', 15], [null, 15]] as const) {
+    write({ minSecondsBetweenRecipients: value })
+    assert.equal(loadConfig().minSecondsBetweenRecipients, expected, String(value))
+  }
 })
 
 test('anything but strings is dropped from the allowlist', () => {
   write({ allowedRecipients: ['56912345678', 42, null, { jid: 'x' }] })
   assert.deepEqual(loadConfig().allowedRecipients, ['56912345678'])
-  write({ allowedRecipients: '*' })
-  assert.deepEqual(loadConfig().allowedRecipients, [])
 })
 
-test('a broken config falls back to the safe defaults', () => {
+test('a broken config falls back to the defaults', () => {
   write('{ not json')
-  assert.deepEqual(loadConfig(), { allowedRecipients: [], confirmBeforeSending: true, autoTranscribe: true })
+  assert.deepEqual(loadConfig(), DEFAULTS)
 })

@@ -2,8 +2,8 @@
 
 <p align="center">
   <b>Your WhatsApp in Claude Code.</b><br>
-  Read, search and summarize your chats, hear voice notes, and reply, from your Mac,<br>
-  with every message you send approved by you.
+  Read, search and summarize your chats, hear voice notes, and reply,<br>
+  all from your Mac.
 </p>
 
 <p align="center">
@@ -27,16 +27,19 @@
 - *"Summarize what I missed in the work chats since yesterday."*
 - *"Find the message where Ana sent the apartment address."*
 - *"What does Pedro's voice note say?"*
-- *"Tell Ana I'll be there at 8."* A dialog on your Mac shows the recipient and the full text, and nothing
-  goes out until you click **Send**.
+- *"Tell Ana I'll be there at 8."* It goes out from your number right away, or after your click if you
+  turn that on.
 
 ## Why this one
 
 - **Your messages stay on your Mac.** They live in a local SQLite file only your user can read, and voice
   notes are transcribed on-device with whisper.cpp. Claude only sees what a tool returns to it.
-- **The model can't send on its own.** Sending needs a recipient you listed by hand *and* your click in a
-  macOS dialog. Both checks live in the bridge, outside Claude, so they hold even with Claude Code's
-  permission prompts turned off.
+- **Sends like a person, not a bot.** Messages to different people go out at least 15 s apart, Claude is
+  told never to repeat a text or work through a list, and the bridge warns it when the same text already
+  went to other chats. See [Avoiding a ban](#avoiding-a-ban).
+- **Locks when you want them.** A list of who Claude may write to, and a dialog that asks you before every
+  message, are one setting away. Both live in the bridge, outside Claude, so they hold even with Claude
+  Code's permission prompts turned off.
 - **Ready for prompt injection.** Anyone can message you, so every read tells the model that message
   text is data, not instructions.
 - **Quiet.** It doesn't show you as online and doesn't send read receipts. Your phone keeps its
@@ -81,7 +84,8 @@ run again.
 
 ### Then
 
-Sending stays off until you allow recipients (see [Sending](#sending)).
+Claude can send from your number right away, without asking: read [Avoiding a ban](#avoiding-a-ban)
+first, and see [Sending](#sending) to restrict it.
 When something doesn't work, `pnpm run doctor` checks every piece and tells you the command that fixes it.
 
 ## How it works
@@ -108,8 +112,8 @@ Node 24 runs the TypeScript directly: there's no build step.
 | `get_messages` | A conversation (or every chat) in a time window, in order |
 | `search_messages` | Full-text search across chats, voice notes included |
 | `get_media` | The photo, voice note, video or document behind a message: photos as images, audio and video as transcripts |
-| `send_message` | Text to an allowed recipient, after your click |
-| `send_file` | A video, image or document to an allowed recipient, after your click |
+| `send_message` | Text to a chat, paced so it doesn't look like a bot |
+| `send_file` | A video, image or document to a chat, with the same pacing |
 
 ## Setting it up by hand
 
@@ -167,24 +171,43 @@ the phone still has the file. A message deleted "for everyone" also deletes its 
 
 ## Sending
 
-Disabled until you allow recipients in `~/.whatsapp-mcp/config.json`:
+On by default: Claude can send text and files to anyone, from your number, without asking. Four
+settings in `~/.whatsapp-mcp/config.json` change that (the file is re-read on every send):
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `allowedRecipients` | `["*"]` | Who Claude may write to: phone numbers with country code (any formatting), exact chat ids for groups, or `"*"` for anyone. `[]` turns sending off. |
+| `confirmBeforeSending` | `false` | `true` shows a macOS dialog with the recipient and the full text for every message. Only clicking **Send** sends; Return and Escape cancel, and it gives up after 2 minutes. |
+| `minSecondsBetweenRecipients` | `15` | A message to someone other than the last recipient waits until this many seconds after the previous send. `0` turns it off. |
+| `autoTranscribe` | `true` | Transcribes incoming voice notes as they arrive (see above). |
+
+All of them are enforced in the bridge, so they hold even when Claude Code runs with permission
+prompts off. To approve every message and limit who gets them:
 
 ```json
-{ "allowedRecipients": ["5491112345678", "120363000000000000@g.us"] }
+{ "allowedRecipients": ["5491112345678", "120363000000000000@g.us"], "confirmBeforeSending": true }
 ```
 
-Phone numbers with country code (any formatting), exact chat ids (groups), or `"*"` for anyone.
-The file is re-read on every send.
-
-By default **every message pops up a macOS dialog** showing the recipient and the full text; only
-clicking **Send** sends (Return/Escape cancel, it gives up after 2 minutes). That check lives in the
-bridge, so it holds even when Claude Code runs with permission prompts off.
 `send_message` sends text (max 2000 characters). `send_file` sends a local file with an optional
 caption: videos as playable videos (over 16 MB they're compressed to 720p first, which needs
-ffmpeg), anything else as a document under 16 MB. Same allowlist and same dialog.
+ffmpeg), anything else as a document under 16 MB.
 
-`"confirmBeforeSending": false` turns the dialog off: messages go out as soon as Claude sends them.
-Then nothing but the model's judgment sits between a message you received and one sent in your name.
+## Avoiding a ban
+
+WhatsApp bans numbers that behave like bots, and this is your own number. It doesn't publish its
+limits, so these are cautious habits, not guarantees:
+
+- **One person at a time.** Leave at least 15 s between messages to different people. The bridge does
+  it for you (`minSecondsBetweenRecipients`); don't lower it.
+- **Every message different.** The same text to many people is the classic spam pattern. Claude is told
+  to write each message for its recipient, and the bridge tells it when the same text already went to
+  other chats in the last 24 hours.
+- **Write to people who know you.** Replies in existing chats are safe ground. First messages to numbers
+  that never wrote to you, especially many of them, are what gets reported, and reports lead to bans.
+- **Human volume.** Dozens of messages a day, not hundreds. No broadcasts, lists or marketing.
+- **Go easy on links and files** in a first message to someone.
+- **A new number is fragile.** If you just registered it, keep sending light for the first weeks.
+- **Experiment on a spare number,** never on the one you can't lose.
 
 ## Privacy and risks
 
@@ -195,11 +218,13 @@ Then nothing but the model's judgment sits between a message you received and on
   notifications.
 - Messages deleted "for everyone" are blanked in the database too.
 - **Unofficial API:** Baileys speaks the WhatsApp Web protocol, which is against WhatsApp's terms.
-  Reading is low-risk; automated or bulk sending can get a number banned.
+  Reading is low-risk; automated or bulk sending can get a number banned (see
+  [Avoiding a ban](#avoiding-a-ban)).
 - **Prompt injection:** anyone who messages you can write instructions aimed at the model. The tools
-  label message text as untrusted, and sending needs your click. But in the same session Claude can
-  also reach other tools (Gmail, Slack…). Be suspicious if Claude proposes something you didn't ask for
-  after reading chats.
+  label message text as untrusted, but by default nothing else stands between a message Claude decides
+  to send and its recipient: if Claude reads chats from people you don't trust, turn on
+  `confirmBeforeSending`. And in the same session Claude can also reach other tools (Gmail, Slack…).
+  Be suspicious if Claude proposes something you didn't ask for after reading chats.
 
 See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
 

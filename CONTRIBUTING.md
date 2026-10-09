@@ -38,6 +38,6 @@ change one of those, add the case that would have caught the bug.
 - TypeScript that Node runs directly: only erasable syntax (no enums, no namespaces, no parameter
   properties), and imports with the `.ts` extension.
 - Comments explain *why*, not what.
-- Anything that sends must go through the bridge's allowlist and confirmation dialog. Pull requests
-  that add a way around them won't be merged.
+- Anything that sends must go through the bridge, so the allowlist, the optional dialog and the pacing
+  apply. Pull requests that add a way around them, or that make bulk sending easier, won't be merged.
 - User-facing text in English, short and concrete.

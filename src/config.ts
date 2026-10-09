@@ -23,13 +23,23 @@ export type Config = {
   // Phone numbers with country code (any formatting), full JIDs (e.g. "1203...@g.us"),
   // or "*" for anyone. Empty means sending is disabled.
   allowedRecipients: string[]
-  // false = send immediately, without the macOS dialog.
+  // true = every message waits for your click in a macOS dialog.
   confirmBeforeSending: boolean
   // Transcribe incoming voice notes locally as they arrive, so search covers them.
   autoTranscribe: boolean
+  // A message to someone other than the last recipient waits until this many seconds after the
+  // previous send. Messaging many people in a row is what gets numbers banned; 0 turns it off.
+  minSecondsBetweenRecipients: number
 }
 
-const DEFAULT_CONFIG: Config = { allowedRecipients: [], confirmBeforeSending: true, autoTranscribe: true }
+// Sending works out of the box: to anyone, without a dialog, paced so it doesn't look like a bot.
+// The allowlist and the dialog are there for whoever wants them.
+export const DEFAULT_CONFIG: Config = {
+  allowedRecipients: ['*'],
+  confirmBeforeSending: false,
+  autoTranscribe: true,
+  minSecondsBetweenRecipients: 15,
+}
 
 export function ensureHome(): void {
   for (const dir of [HOME, AUTH_DIR]) {
@@ -45,11 +55,21 @@ export function ensureHome(): void {
 export function loadConfig(): Config {
   try {
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    const list = Array.isArray(raw?.allowedRecipients) ? raw.allowedRecipients : []
+    // Left out means the default; written but not a list means someone meant to restrict it, so
+    // it sends to nobody rather than to everybody.
+    const list =
+      raw?.allowedRecipients === undefined
+        ? DEFAULT_CONFIG.allowedRecipients
+        : Array.isArray(raw.allowedRecipients)
+          ? raw.allowedRecipients
+          : []
+    const pace = raw?.minSecondsBetweenRecipients
     return {
       allowedRecipients: list.filter((x: unknown): x is string => typeof x === 'string'),
-      confirmBeforeSending: raw?.confirmBeforeSending !== false,
+      confirmBeforeSending: raw?.confirmBeforeSending === true,
       autoTranscribe: raw?.autoTranscribe !== false,
+      minSecondsBetweenRecipients:
+        typeof pace === 'number' && Number.isFinite(pace) && pace >= 0 ? pace : DEFAULT_CONFIG.minSecondsBetweenRecipients,
     }
   } catch {
     return DEFAULT_CONFIG

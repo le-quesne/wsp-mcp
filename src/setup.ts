@@ -278,7 +278,8 @@ printChecks(await runChecks())
 say(`\n${styleText('bold', 'Next')}`)
 say('  Restart Claude Code and ask it something like "what did the family group talk about today?"')
 const config = loadConfig()
-if (!config.allowedRecipients.length) {
-  say(`  Sending is off until you list who Claude may write to in ${tilde(CONFIG_PATH)}`)
-  say(`  (see "Sending" in the README).${config.confirmBeforeSending ? ' Every message still asks you first.' : ''}`)
+if (config.allowedRecipients.length) {
+  say(`  Claude can send messages from your number${config.confirmBeforeSending ? ', after your click' : ' without asking'}.`)
+  say('  WhatsApp bans numbers that act like bots: read "Avoiding a ban" in the README, and see')
+  say(`  ${tilde(CONFIG_PATH)} to limit who it can write to or to approve each message.`)
 }

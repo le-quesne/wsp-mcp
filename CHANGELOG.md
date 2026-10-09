@@ -6,7 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.0] - 2026-10-08
 
+### Changed
+
+- Sending is on by default: to anyone (`"allowedRecipients": ["*"]`) and without the confirmation
+  dialog (`"confirmBeforeSending": false`). Config files that already exist keep their values.
+
 ### Added
+
+- Pacing: a message to someone other than the last recipient waits until 15 s after the previous send
+  (`minSecondsBetweenRecipients`). Replies in the same chat aren't held.
+- The bridge tells Claude when the same text already went to other chats in the last 24 hours, and the
+  tool descriptions tell it how to protect the number: no repeated texts, no lists, no cold messages.
+- "Avoiding a ban" in the README.
 
 - Install with one prompt: paste the prompt from the README into Claude Code and type an 8-character
   code on your phone. `pnpm run setup --phone <number>` links with a code instead of a QR, so setup

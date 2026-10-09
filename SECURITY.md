@@ -17,7 +17,7 @@ version on `main` gets fixes.
 | Asset | Protection |
 | --- | --- |
 | Your messages and session keys (`~/.whatsapp-mcp`) | Never leave the Mac. The folder is `0700` and the database, config and downloaded media are `0600`. Anyone who can read `auth/` can act as you, so treat it like a password. |
-| Sending in your name | An allowlist you edit by hand (`allowedRecipients`, empty by default), plus a macOS dialog with the recipient and the full text for every message. Both are enforced in the bridge process, outside the model and the MCP client. |
+| Sending in your name | On by default, to anyone, without asking. Locking it down is one setting away: an allowlist (`allowedRecipients`) and a macOS dialog with the recipient and the full text for every message (`confirmBeforeSending`). Both, and the pacing between different recipients, are enforced in the bridge process, outside the model and the MCP client. |
 | The model's judgment | Message text is written by other people. Every read result says so, and the server instructions tell the model never to act on instructions found in messages. |
 | The bridge's local API | A Unix socket with `0600` permissions: only your user can talk to it. |
 
@@ -26,8 +26,9 @@ version on `main` gets fixes.
 - **Prompt injection can't be fully prevented.** A message can still try to steer the model into
   using *other* tools in the same Claude session (mail, files, the web). The send checks only cover
   WhatsApp.
-- **`"confirmBeforeSending": false` or `"*"` in the allowlist removes the safety net.** `pnpm run doctor`
-  warns about both.
+- **By default nothing stands between a message Claude decides to send and its recipient.** A message
+  you receive can try to talk the model into sending something. If Claude reads chats from people you
+  don't trust, turn on `confirmBeforeSending` or limit `allowedRecipients`.
 - **Unofficial protocol.** Baileys is not WhatsApp's official API. Using it is against WhatsApp's terms
   and can get a number banned, especially with automated or bulk sending. That's a risk of the
-  approach, not a vulnerability.
+  approach, not a vulnerability; the README's "Avoiding a ban" section has the habits that lower it.

@@ -342,6 +342,15 @@ export function stats(db: DatabaseSync): Record<string, string | number | null> 
   }
 }
 
+// How many OTHER chats got this exact text from you since `sinceTs`, sent from here or from the
+// phone. WhatsApp flags identical messages sent to many people, so the bridge warns about it.
+export function sameTextElsewhere(db: DatabaseSync, chat: string, text: string, sinceTs: number): number {
+  const r = db
+    .prepare('SELECT COUNT(DISTINCT chat_jid) AS n FROM messages WHERE from_me = 1 AND text = ? AND chat_jid != ? AND ts >= ?')
+    .get(text, chat, sinceTs)
+  return num(r?.n) ?? 0
+}
+
 // get_media can be called with just the id from a message line.
 export function chatOfMessage(db: DatabaseSync, id: string, chat?: string): string {
   if (chat) return resolveChat(db, chat).jid

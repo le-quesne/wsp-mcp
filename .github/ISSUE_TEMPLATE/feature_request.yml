@@ -17,4 +17,4 @@ body:
       required: false
   - type: markdown
     attributes:
-      value: Anything that sends has to keep the allowlist and the confirmation dialog. Ideas that work around them won't be accepted.
+      value: Anything that sends goes through the bridge's allowlist, optional dialog and pacing. Bulk sending, broadcasts and ways around those checks won't be accepted.
