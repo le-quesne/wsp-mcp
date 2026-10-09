@@ -143,7 +143,9 @@ if (isPaired()) {
     say(`  "${linkPhone}" doesn't look like a phone number. Use the full number with country code: --phone +56912345678`)
     process.exit(1)
   }
-  if ((await bridgeConnection()) !== undefined) {
+  // Our own agent, still unlinked, is a pairing attempt that was cut short: `agent.sh pair`
+  // replaces it. Any other running bridge holds a session we must not touch.
+  if ((await bridgeConnection()) !== undefined && !ownAgent()) {
     say('  Another bridge is running and holds the WhatsApp session. Stop it first')
     say('  (Ctrl+C in its terminal, or pnpm agent:uninstall), then run setup again.')
     process.exit(1)
@@ -167,6 +169,16 @@ if (isPaired()) {
   say('  Asking WhatsApp for a pairing code…')
   // Everything the bridge says is kept, so a failure can show why.
   const recent: string[] = []
+  // Stopped while waiting (Ctrl+C, or the command killed): a bridge left behind would keep asking
+  // WhatsApp for codes nobody types. Once linked, though, it stays: it's importing the history.
+  const abandon = () => {
+    if (!isPaired()) {
+      say('\n  Stopped before the phone was linked; removing the background bridge.')
+      spawnSync('sh', [agentScript, 'uninstall'], { stdio: 'inherit' })
+    }
+    process.exit(130)
+  }
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.once(signal, abandon)
   const result = await watchPairing({
     readNew,
     isPaired,
@@ -188,6 +200,7 @@ if (isPaired()) {
       }
     },
   })
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.off(signal, abandon)
   if (result === 'paired') {
     sh('sh', [agentScript, 'forget-phone'])
     done('Linked. Your history keeps importing in the background; it can take a few minutes.')
