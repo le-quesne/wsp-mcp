@@ -9,13 +9,13 @@
 //
 // No dependencies beyond Node itself: it's what runs `pnpm install`.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { styleText } from 'node:util'
 import { findBin } from './bin.ts'
-import { pairWithCode, phoneDigits } from './pair.ts'
-import { CONFIG_PATH, ensureHome, loadConfig, WHISPER_MODEL } from './config.ts'
+import { logFollower, phoneDigits, watchPairing } from './pair.ts'
+import { CONFIG_PATH, ensureHome, HOME, loadConfig, WHISPER_MODEL } from './config.ts'
 import {
   AGENT_PLIST,
   agentTarget,
@@ -115,20 +115,44 @@ else if (await ask('Download the whisper.cpp speech model (large-v3-turbo, about
 
 step(4, 'Link your phone')
 ensureHome()
-if (isPaired()) done('Already linked')
-else if (PHONE !== undefined) {
-  const digits = phoneDigits(PHONE)
+// Linking by code is the default: the background bridge does it and keeps running afterwards.
+// The QR needs a bridge in this terminal, and stopping it to hand over can lose part of the first
+// history import (see pair.ts), so it's only the fallback.
+let linkPhone: string | undefined
+async function askPhone(): Promise<string | undefined> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const answer = (await rl.question('  Your WhatsApp number with country code, to link with a code\n  (or press Enter to scan a QR code instead): ')).trim()
+  rl.close()
+  return answer || undefined
+}
+const agentScript = join(REPO, 'scripts', 'agent.sh')
+const ownAgent = () => resolve(agentTarget(AGENT_PLIST, '/src/bridge.ts') ?? '') === join(REPO, 'src', 'bridge.ts')
+if (isPaired()) {
+  done('Already linked')
+  // A link by code left the number in the agent's plist (setup stopped before cleaning it up).
+  if (ownAgent() && readFileSync(AGENT_PLIST, 'utf8').includes('<string>--phone</string>')) sh('sh', [agentScript, 'forget-phone'])
+} else if (
+  (linkPhone = PHONE ?? (INTERACTIVE && !YES ? await askPhone() : undefined)) !== undefined
+) {
+  const digits = phoneDigits(linkPhone)
   if (!digits) {
-    say(`  "${PHONE}" doesn't look like a phone number. Use the full number with country code: --phone +56912345678`)
+    say(`  "${linkPhone}" doesn't look like a phone number. Use the full number with country code: --phone +56912345678`)
     process.exit(1)
   }
+  if ((await bridgeConnection()) !== undefined) {
+    say('  Another bridge is running and holds the WhatsApp session. Stop it first')
+    say('  (Ctrl+C in its terminal, or pnpm agent:uninstall), then run setup again.')
+    process.exit(1)
+  }
+  // The background bridge asks for the code and, once linked, keeps running: no restart to cut
+  // the first history import short (see pair.ts).
+  const readNew = logFollower(join(HOME, 'bridge.log'))
+  if (!sh('sh', [agentScript, 'pair', digits])) process.exit(1)
   say('  Asking WhatsApp for a pairing code…')
   // Everything the bridge says is kept, so a failure can show why.
   const recent: string[] = []
-  const result = await pairWithCode({
-    command: process.execPath,
-    args: ['--disable-warning=ExperimentalWarning', join(REPO, 'src', 'bridge.ts'), '--phone', digits],
-    cwd: REPO,
+  const result = await watchPairing({
+    readNew,
     isPaired,
     onCode: (code, replacesEarlier) => {
       say()
@@ -143,17 +167,21 @@ else if (PHONE !== undefined) {
     onLine: line => {
       recent.push(line)
       if (recent.length > 40) recent.shift()
-      if (/History sync|Connected as|Connection closed|Another bridge|logged|Fatal|Unhandled|rror|Could not/.test(line)) {
+      if (/Connected as|Connection closed|Another bridge|logged|Fatal|Unhandled|rror|Could not/.test(line)) {
         say(styleText('dim', `  ${line}`))
       }
     },
   })
-  if (result === 'paired') done('Linked')
-  else {
+  if (result === 'paired') {
+    sh('sh', [agentScript, 'forget-phone'])
+    done('Linked. Your history keeps importing in the background; it can take a few minutes.')
+  } else {
+    // Left running, it would keep asking WhatsApp for codes nobody types.
+    sh('sh', [agentScript, 'uninstall'])
     say(
       result === 'timeout'
         ? '  The code wasn\'t entered within 5 minutes. Run setup again for a new one.'
-        : '  The bridge stopped before the phone was linked.',
+        : '  The bridge couldn\'t link the phone.',
     )
     if (recent.length) {
       say('  Last lines from the bridge:')
@@ -165,7 +193,8 @@ else if (PHONE !== undefined) {
 else if (await ask('Show the QR code now?', true)) {
   say()
   say('  On your phone: WhatsApp → Settings → Linked devices → Link a device, and scan the code.')
-  say('  Then wait while "History sync" lines appear. When they stop, press Ctrl+C to continue setup.')
+  say('  Then leave it running while "History sync" lines appear. Press Ctrl+C only after they have')
+  say('  stopped for a couple of minutes: stopping during the first import can lose part of your history.')
   say()
   // Ctrl+C is meant for the bridge: setup keeps going once it exits.
   const ignore = () => {}

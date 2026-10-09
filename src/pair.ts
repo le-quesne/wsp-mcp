@@ -1,8 +1,12 @@
 // Linking with an 8-character code instead of a QR. It's what lets setup run where there's no
 // terminal to draw a QR in, like inside Claude Code: the bridge asks WhatsApp for a code, and the
 // person types it on their phone (Linked devices → Link a device → Link with phone number instead).
-import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
+//
+// The bridge that asks for the code is the background one (`scripts/agent.sh pair`), and setup
+// only reads its log. There's no handover after linking: Baileys confirms each history chunk to
+// WhatsApp before downloading it and doesn't remember pending downloads, so stopping a freshly
+// linked bridge mid-import would lose those messages for good.
+import { closeSync, openSync, readSync, statSync } from 'node:fs'
 
 // A pairing code that was requested but never typed leaves `me` in the session, and with `me`
 // Baileys tries to log in instead of asking for a new link: no new code, no QR, just a rejection.
@@ -24,78 +28,76 @@ export function phoneDigits(input: string): string | undefined {
 export const pairingCodeIn = (line: string): string | undefined =>
   /Pairing code:\s*([A-Z0-9]{4}-?[A-Z0-9]{4})\b/i.exec(line)?.[1]
 
-export type PairOptions = {
-  command: string
-  args: string[]
-  cwd: string
+export type WatchOptions = {
+  // What was appended to the bridge log since the last call.
+  readNew: () => string
   isPaired: () => boolean
   onCode: (code: string, replacesEarlier: boolean) => void
   onLine?: (line: string) => void
   // How long the person has to type the code.
-  pairTimeoutMs?: number
-  // Once linked, the first history import counts as done after this long without a new
-  // "History sync" line, or after syncCapMs in total, whichever comes first. Stopping earlier
-  // isn't fatal (the background bridge picks up what's left), but it's a calmer handover.
-  quietMs?: number
-  syncCapMs?: number
+  timeoutMs?: number
+  pollMs?: number
 }
 
-export type PairResult = 'paired' | 'timeout' | 'exited'
+export type WatchResult = 'paired' | 'timeout' | 'failed'
 
-export function pairWithCode(o: PairOptions): Promise<PairResult> {
-  const { pairTimeoutMs = 5 * 60_000, quietMs = 30_000, syncCapMs = 5 * 60_000 } = o
+// Lines that mean the bridge can't link, however long we wait.
+const HOPELESS = /Another bridge is already running|Fatal:|logged this device out/
+
+export function watchPairing(o: WatchOptions): Promise<WatchResult> {
+  const { timeoutMs = 5 * 60_000, pollMs = 500 } = o
+  const started = Date.now()
+  let partial = ''
+  // A reconnect while the person is typing makes the bridge ask for a new code, and only the
+  // newest one works: pass each one on.
+  let lastCode: string | undefined
   return new Promise(resolve => {
-    const child = spawn(o.command, o.args, { cwd: o.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    let result: PairResult | undefined
-    let linked = false
-    const timers: NodeJS.Timeout[] = []
-    let quiet: NodeJS.Timeout | undefined
-
-    // Stop the bridge and report once it has really exited: the background agent can't take the
-    // session while this one still holds it.
-    const finish = (r: PairResult) => {
-      if (result) return
-      result = r
-      timers.forEach(clearTimeout)
-      clearTimeout(quiet)
-      child.kill('SIGTERM')
-      timers.push(setTimeout(() => child.kill('SIGKILL'), 10_000))
-    }
-    const settleLater = () => {
-      clearTimeout(quiet)
-      quiet = setTimeout(() => finish('paired'), quietMs)
-    }
-    const onLinked = () => {
-      if (linked || result) return
-      linked = true
-      timers.push(setTimeout(() => finish('paired'), syncCapMs))
-      settleLater()
-    }
-
-    // A reconnect while the person is typing makes the bridge ask for a new code, and only the
-    // newest one works: pass each one on.
-    let lastCode: string | undefined
-    for (const stream of [child.stdout, child.stderr]) {
-      createInterface({ input: stream }).on('line', line => {
+    const tick = () => {
+      const lines = (partial + o.readNew()).split('\n')
+      partial = lines.pop() ?? ''
+      for (const line of lines) {
         o.onLine?.(line)
         const code = pairingCodeIn(line)
         if (code && code !== lastCode) {
           o.onCode(code, lastCode !== undefined)
           lastCode = code
         }
-        if (linked && /History sync/.test(line)) settleLater()
-      })
+        if (HOPELESS.test(line)) return resolve('failed')
+      }
+      // The bridge saves the session the moment the phone accepts the code.
+      if (o.isPaired()) return resolve('paired')
+      if (Date.now() - started > timeoutMs) return resolve('timeout')
+      setTimeout(tick, pollMs)
     }
-
-    // The bridge saves the session the moment the phone accepts the code.
-    const poll = setInterval(() => o.isPaired() && onLinked(), 1000)
-    timers.push(setTimeout(() => !linked && finish('timeout'), pairTimeoutMs))
-
-    child.on('exit', () => {
-      clearInterval(poll)
-      timers.forEach(clearTimeout)
-      clearTimeout(quiet)
-      resolve(result ?? (o.isPaired() ? 'paired' : 'exited'))
-    })
+    tick()
   })
+}
+
+// Reads a log from where it ends now: only what the bridge writes from here on.
+export function logFollower(path: string): () => string {
+  let offset = (() => {
+    try {
+      return statSync(path).size
+    } catch {
+      return 0
+    }
+  })()
+  return () => {
+    let fd: number
+    try {
+      fd = openSync(path, 'r')
+    } catch {
+      return ''
+    }
+    try {
+      const size = statSync(path).size
+      if (size < offset) offset = 0
+      const buf = Buffer.alloc(size - offset)
+      const n = buf.length ? readSync(fd, buf, 0, buf.length, offset) : 0
+      offset += n
+      return buf.subarray(0, n).toString('utf8')
+    } finally {
+      closeSync(fd)
+    }
+  }
 }

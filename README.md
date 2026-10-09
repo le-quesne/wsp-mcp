@@ -74,9 +74,10 @@ cd wsp-mcp
 pnpm run setup
 ```
 
-Setup installs the dependencies, offers ffmpeg, whisper.cpp and the speech model, shows a QR code to
-link your phone (or a code, with `--phone <number>`), keeps the bridge running in the background,
-and registers the server with Claude Code. Each step checks first, so it's safe to run again.
+Setup installs the dependencies, offers ffmpeg, whisper.cpp and the speech model, asks for your number
+to link your phone with a code (press Enter to scan a QR code instead), keeps the bridge running in
+the background, and registers the server with Claude Code. Each step checks first, so it's safe to
+run again.
 
 ### Then
 

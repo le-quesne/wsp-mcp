@@ -11,8 +11,10 @@ All notable changes to this project are documented here. The format follows
 - Install with one prompt: paste the prompt from the README into Claude Code and type an 8-character
   code on your phone. `pnpm run setup --phone <number>` links with a code instead of a QR, so setup
   runs without a terminal.
-- After linking, setup waits for the first history import to settle before handing the session to
-  the background bridge.
+- The background bridge does the linking itself (`scripts/agent.sh pair <number>`) and keeps running
+  afterwards, so nothing restarts it in the middle of the first history import, which would lose
+  messages: WhatsApp's history chunks are confirmed before they're downloaded.
+- In a terminal, setup asks for your number and links by code; pressing Enter falls back to the QR.
 
 ### Fixed
 
@@ -21,6 +23,7 @@ All notable changes to this project are documented here. The format follows
   for `account`, which only a confirmed link writes.
 - After a pairing code that was never typed, the next attempt tried to log in with it instead of
   asking for a new link. The bridge now drops the unfinished attempt and starts over.
+- The background bridge ignored a custom data folder (`WA_MCP_HOME`): the agent now passes it on.
 
 ## [0.1.0] - 2026-10-08
 

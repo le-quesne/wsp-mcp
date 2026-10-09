@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { forgetUnfinishedLink, pairingCodeIn, pairWithCode, phoneDigits } from '../src/pair.ts'
+import { forgetUnfinishedLink, logFollower, pairingCodeIn, phoneDigits, watchPairing } from '../src/pair.ts'
 
 test('phone numbers become digits, and nonsense is refused', () => {
   assert.equal(phoneDigits('+56 9 1234 5678'), '56912345678')
@@ -18,64 +18,59 @@ test('the pairing code is read from the bridge log line', () => {
   assert.equal(pairingCodeIn('[10:02:11] Connected as Ana (+56912345678).'), undefined)
 })
 
-// A stand-in for the bridge: prints what the real one prints, and "links" by creating a file.
-function fakeBridge(script: string) {
-  const dir = mkdtempSync(join(tmpdir(), 'wsp-mcp-pair-'))
-  const linked = join(dir, 'linked')
+// The log as the background bridge would write it, a piece per poll.
+function fakeLog(pieces: string[], linkAfter = Infinity) {
+  let polls = 0
   return {
-    command: process.execPath,
-    args: ['-e', `const fs = require('node:fs'); const LINKED = ${JSON.stringify(linked)}; ${script}`],
-    cwd: dir,
-    isPaired: () => existsSync(linked),
+    readNew: () => pieces[polls++] ?? '',
+    isPaired: () => polls > linkAfter,
   }
 }
 
-test('shows the code, waits for the link, lets the history import settle, then stops the bridge', async () => {
-  const codes: string[] = []
-  const bridge = fakeBridge(`
-    console.log('Pairing code: WXYZ-1234')
-    setTimeout(() => fs.writeFileSync(LINKED, ''), 300)
-    setTimeout(() => console.log('History sync: +500 messages'), 1300)
-    setInterval(() => {}, 1000)
-  `)
-  const result = await pairWithCode({ ...bridge, onCode: c => codes.push(c), quietMs: 400, syncCapMs: 10_000 })
+test('shows the code and returns once the phone accepts it', async () => {
+  const codes: [string, boolean][] = []
+  const log = fakeLog(['[10:00:01] Pairing code: WXYZ-1234\n', '', '[10:00:40] Connected as Ana\n'], 2)
+  const result = await watchPairing({ ...log, onCode: (c, again) => codes.push([c, again]), pollMs: 5 })
   assert.equal(result, 'paired')
-  assert.deepEqual(codes, ['WXYZ-1234'])
+  assert.deepEqual(codes, [['WXYZ-1234', false]])
 })
 
-test('a new code replaces the earlier one', async () => {
+test('a new code replaces the earlier one, and a repeated line is not a new code', async () => {
   const codes: [string, boolean][] = []
-  const bridge = fakeBridge(`
-    console.log('Pairing code: AAAA-1111')
-    console.log('Pairing code: AAAA-1111')
-    setTimeout(() => console.log('Pairing code: BBBB-2222'), 100)
-    setTimeout(() => fs.writeFileSync(LINKED, ''), 200)
-    setInterval(() => {}, 1000)
-  `)
-  await pairWithCode({ ...bridge, onCode: (c, again) => codes.push([c, again]), quietMs: 200 })
+  const log = fakeLog(['Pairing code: AAAA-1111\nPairing code: AAAA-1111\n', 'Pairing code: BBBB-2222\n'], 2)
+  await watchPairing({ ...log, onCode: (c, again) => codes.push([c, again]), pollMs: 5 })
   assert.deepEqual(codes, [['AAAA-1111', false], ['BBBB-2222', true]])
 })
 
+test('a line split across two reads is read whole', async () => {
+  const codes: string[] = []
+  const log = fakeLog(['[10:00:01] Pairing co', 'de: WXYZ-1234\n'], 2)
+  await watchPairing({ ...log, onCode: c => codes.push(c), pollMs: 5 })
+  assert.deepEqual(codes, ['WXYZ-1234'])
+})
+
 test('gives up when nobody types the code', async () => {
-  const bridge = fakeBridge(`console.log('Pairing code: WXYZ-1234'); setInterval(() => {}, 1000)`)
-  assert.equal(await pairWithCode({ ...bridge, onCode: () => {}, pairTimeoutMs: 500 }), 'timeout')
+  const log = fakeLog(['Pairing code: WXYZ-1234\n'])
+  assert.equal(await watchPairing({ ...log, onCode: () => {}, timeoutMs: 100, pollMs: 10 }), 'timeout')
 })
 
-test('reports a bridge that stops before linking', async () => {
-  const bridge = fakeBridge(`console.error('Another bridge is already running.'); process.exit(1)`)
+test('stops waiting when the bridge says it cannot link', async () => {
   const lines: string[] = []
-  assert.equal(await pairWithCode({ ...bridge, onCode: () => {}, onLine: l => lines.push(l) }), 'exited')
-  assert.deepEqual(lines, ['Another bridge is already running.'])
+  const log = fakeLog(['Another bridge is already running (/tmp/x.sock).\n'])
+  const result = await watchPairing({ ...log, onCode: () => {}, onLine: l => lines.push(l), pollMs: 5 })
+  assert.equal(result, 'failed')
+  assert.deepEqual(lines, ['Another bridge is already running (/tmp/x.sock).'])
 })
 
-test('a history import that never goes quiet is still cut off', async () => {
-  const bridge = fakeBridge(`
-    fs.writeFileSync(LINKED, '')
-    setInterval(() => console.log('History sync: +10 messages'), 100)
-  `)
-  const started = Date.now()
-  assert.equal(await pairWithCode({ ...bridge, onCode: () => {}, quietMs: 500, syncCapMs: 2000 }), 'paired')
-  assert.ok(Date.now() - started < 6000)
+test('the log is read from where it ended, then only what is new', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'wsp-mcp-log-')), 'bridge.log')
+  writeFileSync(path, 'old line from yesterday\n')
+  const readNew = logFollower(path)
+  assert.equal(readNew(), '')
+  appendFileSync(path, 'Pairing code: WXYZ-1234\n')
+  assert.equal(readNew(), 'Pairing code: WXYZ-1234\n')
+  assert.equal(readNew(), '')
+  assert.equal(logFollower(join(tmpdir(), 'no-such-dir', 'bridge.log'))(), '')
 })
 
 test('an unfinished code request is forgotten, a linked session is kept', () => {
