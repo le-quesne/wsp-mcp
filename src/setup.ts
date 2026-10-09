@@ -18,6 +18,7 @@ import { logFollower, phoneDigits, watchPairing } from './pair.ts'
 import { CONFIG_PATH, ensureHome, HOME, loadConfig, WHISPER_MODEL } from './config.ts'
 import {
   AGENT_PLIST,
+  agentDataDir,
   agentTarget,
   bridgeConnection,
   claudeBin,
@@ -143,6 +144,18 @@ if (isPaired()) {
     say('  Another bridge is running and holds the WhatsApp session. Stop it first')
     say('  (Ctrl+C in its terminal, or pnpm agent:uninstall), then run setup again.')
     process.exit(1)
+  }
+  // There's one background bridge per Mac (one launchd label). If the installed one belongs to
+  // another copy or another data folder, linking here replaces it, and a failed link removes it.
+  const otherTarget = agentTarget(AGENT_PLIST, '/src/bridge.ts')
+  const otherData = agentDataDir(AGENT_PLIST)
+  if (otherTarget && (!ownAgent() || resolve(otherData ?? '') !== resolve(HOME))) {
+    say(`  A background bridge is already installed for another setup:`)
+    say(`    code ${tilde(otherTarget)}, data ${tilde(otherData ?? '')}`)
+    if (!(await ask('Replace it with this one? Its phone stays linked in its data folder, but it stops syncing.', false))) {
+      later('Kept the other background bridge', 'pnpm agent:uninstall, then pnpm run setup')
+      process.exit(1)
+    }
   }
   // The background bridge asks for the code and, once linked, keeps running: no restart to cut
   // the first history import short (see pair.ts).

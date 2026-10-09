@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { agentTarget, entryFromArgs, isPaired } from '../src/doctor.ts'
+import { agentDataDir, agentTarget, entryFromArgs, isPaired } from '../src/doctor.ts'
 
 test('the registered server path survives spaces in the folder name', () => {
   assert.equal(
@@ -39,4 +39,14 @@ test('a requested pairing code is not a linked phone', () => {
   // After the phone accepts the link (by code or by QR).
   creds({ registered: true, account: { details: 'x' }, me: { id: '56912345678:12@s.whatsapp.net', lid: '1@lid' } })
   assert.equal(isPaired(auth), true, 'linked')
+})
+
+test('the agent plist tells which data folder it uses, the default for older plists', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wsp-mcp-test-'))
+  const plist = join(dir, 'agent.plist')
+  writeFileSync(plist, `<dict><key>WA_MCP_HOME</key><string>/Users/ana/wsp data</string></dict>`)
+  assert.equal(agentDataDir(plist), '/Users/ana/wsp data')
+  writeFileSync(plist, `<dict><key>PATH</key><string>/usr/bin</string></dict>`)
+  assert.equal(agentDataDir(plist), join(homedir(), '.whatsapp-mcp'))
+  assert.equal(agentDataDir(join(dir, 'missing.plist')), undefined)
 })

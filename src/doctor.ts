@@ -48,6 +48,13 @@ export function agentTarget(plist: string, suffix: string): string | undefined {
   }
 }
 
+// Which data folder a launchd agent uses. Plists from before WA_MCP_HOME was passed on used the default.
+export function agentDataDir(plist: string): string | undefined {
+  if (!existsSync(plist)) return
+  const m = /<key>WA_MCP_HOME<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(plist, 'utf8'))
+  return m ? m[1] : join(homedir(), '.whatsapp-mcp')
+}
+
 // What Claude Code has registered as "whatsapp", if anything. `claude mcp get` starts the server
 // to report its status, hence the generous timeout.
 // The server path in the "Args:" line of `claude mcp get`. It starts at the first "/" after a
@@ -148,6 +155,13 @@ export async function runChecks(): Promise<Check[]> {
       title: 'The background agent runs another copy of this code',
       detail: tilde(agent),
       fix: 'pnpm agent:install (from this folder)',
+    })
+  } else if (resolve(agentDataDir(AGENT_PLIST) ?? HOME) !== resolve(HOME)) {
+    add({
+      level: 'warn',
+      title: 'The background agent uses another data folder',
+      detail: tilde(agentDataDir(AGENT_PLIST) ?? ''),
+      fix: 'pnpm agent:install (with the WA_MCP_HOME you want)',
     })
   } else {
     add({ level: 'ok', title: 'Background agent installed' })
