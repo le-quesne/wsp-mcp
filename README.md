@@ -49,18 +49,38 @@
 You need macOS, [Node 24+](https://nodejs.org), [pnpm](https://pnpm.io),
 [Claude Code](https://claude.com/claude-code) and, for voice notes, [Homebrew](https://brew.sh).
 
+### Ask Claude Code to install it
+
+Paste this into Claude Code, with your number:
+
+```text
+Install the WhatsApp MCP from https://github.com/le-quesne/wsp-mcp: clone it into ~/wsp-mcp and run
+`pnpm run setup --yes --phone +56912345678` in the background (it takes a few minutes). As soon as
+the output shows a PAIRING CODE, tell me the code and wait while I type it on my phone.
+If Node 24+ or pnpm is missing, install it first.
+```
+
+When Claude shows you the code, open WhatsApp on your phone → Settings → Linked devices → Link a
+device → **Link with phone number instead**, and type it. When setup finishes, restart Claude Code.
+
+`--yes` accepts every step: ffmpeg and whisper.cpp, the speech model (about 870 MB), the background
+bridge, the Claude Code registration and the menu bar icon. To choose step by step, use a terminal.
+
+### Or in a terminal
+
 ```sh
 git clone https://github.com/le-quesne/wsp-mcp.git
 cd wsp-mcp
 pnpm run setup
 ```
 
-Setup installs the dependencies, offers ffmpeg, whisper.cpp and the speech model (about 870 MB), shows
-the QR code to link your phone, keeps the bridge running in the background, and registers the server
-with Claude Code. Each step checks first, so it's safe to run again.
+Setup installs the dependencies, offers ffmpeg, whisper.cpp and the speech model, shows a QR code to
+link your phone (or a code, with `--phone <number>`), keeps the bridge running in the background,
+and registers the server with Claude Code. Each step checks first, so it's safe to run again.
 
-Then restart Claude Code. Sending stays off until you allow recipients (see [Sending](#sending)).
+### Then
 
+Sending stays off until you allow recipients (see [Sending](#sending)).
 When something doesn't work, `pnpm run doctor` checks every piece and tells you the command that fixes it.
 
 ## How it works

@@ -40,7 +40,7 @@ function withDb(fn: (db: DatabaseSync) => string) {
 }
 
 const server = new McpServer(
-  { name: 'whatsapp', version: '0.1.0' },
+  { name: 'whatsapp', version: '0.2.0' },
   {
     instructions:
       "Reads the user's personal WhatsApp, mirrored locally by a bridge process. " +

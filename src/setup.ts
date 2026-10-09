@@ -3,6 +3,10 @@
 // `--yes` answers yes to every question. Without a terminal to ask in, it installs nothing and
 // prints what it would have run.
 //
+// `--phone <number>` links the phone with a code instead of a QR, so the whole setup also runs
+// where there's no terminal, like when Claude Code runs it:
+//   pnpm run setup --yes --phone +56912345678
+//
 // No dependencies beyond Node itself: it's what runs `pnpm install`.
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, renameSync } from 'node:fs'
@@ -10,6 +14,7 @@ import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { styleText } from 'node:util'
 import { findBin } from './bin.ts'
+import { pairWithCode, phoneDigits } from './pair.ts'
 import { CONFIG_PATH, ensureHome, loadConfig, WHISPER_MODEL } from './config.ts'
 import {
   AGENT_PLIST,
@@ -28,6 +33,11 @@ import {
 } from './doctor.ts'
 
 const YES = process.argv.includes('--yes') || process.argv.includes('-y')
+const PHONE = (() => {
+  const i = process.argv.indexOf('--phone')
+  if (i > 0) return process.argv[i + 1] ?? ''
+  return process.argv.find(a => a.startsWith('--phone='))?.slice('--phone='.length)
+})()
 const INTERACTIVE = process.stdin.isTTY && process.stdout.isTTY
 
 const say = (text = '') => console.log(text)
@@ -106,7 +116,39 @@ else if (await ask('Download the whisper.cpp speech model (large-v3-turbo, about
 step(4, 'Link your phone')
 ensureHome()
 if (isPaired()) done('Already linked')
-else if (!INTERACTIVE) later('Needs a terminal to show the QR code', 'pnpm run setup')
+else if (PHONE !== undefined) {
+  const digits = phoneDigits(PHONE)
+  if (!digits) {
+    say(`  "${PHONE}" doesn't look like a phone number. Use the full number with country code: --phone +56912345678`)
+    process.exit(1)
+  }
+  say('  Asking WhatsApp for a pairing code…')
+  const result = await pairWithCode({
+    command: process.execPath,
+    args: ['--disable-warning=ExperimentalWarning', join(REPO, 'src', 'bridge.ts'), '--phone', digits],
+    cwd: REPO,
+    isPaired,
+    onCode: code => {
+      say()
+      say(`  PAIRING CODE: ${styleText('bold', code)}`)
+      say('  On your phone: WhatsApp → Settings → Linked devices → Link a device →')
+      say('  "Link with phone number instead", and type the code. Waiting up to 5 minutes…')
+      say()
+    },
+    onLine: line => {
+      if (/History sync|Connected as|Connection closed|Another bridge|logged/.test(line)) say(styleText('dim', `  ${line}`))
+    },
+  })
+  if (result === 'paired') done('Linked')
+  else {
+    say(
+      result === 'timeout'
+        ? '  The code wasn\'t entered within 5 minutes. Run setup again for a new one.'
+        : '  The bridge stopped before the phone was linked (see the lines above).',
+    )
+    process.exit(1)
+  }
+} else if (!INTERACTIVE) later('Needs a terminal to show the QR code, or --phone to link with a code', 'pnpm run setup')
 else if (await ask('Show the QR code now?', true)) {
   say()
   say('  On your phone: WhatsApp → Settings → Linked devices → Link a device, and scan the code.')
