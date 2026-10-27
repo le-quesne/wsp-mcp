@@ -5,7 +5,7 @@
 //
 // `--phone <number>` links the phone with a code instead of a QR, so the whole setup also runs
 // where there's no terminal, like when Claude Code runs it:
-//   pnpm run setup --yes --phone +56912345678
+//   pnpm run setup --yes --phone +15551234567
 //
 // No dependencies beyond Node itself: it's what runs `pnpm install`.
 import { spawn, spawnSync } from 'node:child_process'
@@ -141,7 +141,7 @@ if (isPaired()) {
 ) {
   const digits = phoneDigits(linkPhone)
   if (!digits) {
-    say(`  "${linkPhone}" doesn't look like a phone number. Use the full number with country code: --phone +56912345678`)
+    say(`  "${linkPhone}" doesn't look like a phone number. Use the full number with country code: --phone +15551234567`)
     process.exit(1)
   }
   // Our own agent, still unlinked, is a pairing attempt that was cut short: `agent.sh pair`

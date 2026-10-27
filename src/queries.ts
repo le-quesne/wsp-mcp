@@ -146,7 +146,7 @@ const MESSAGE_JOINS = `
 
 const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ⏎ ')
 
-// "@5549181669379" in a message is an internal id or a phone number: show the person instead.
+// "@123456789012345" in a message is an internal id or a phone number: show the person instead.
 export function mentionNamer(db: DatabaseSync): (text: string) => string {
   const meLabel = str(db.prepare("SELECT value FROM meta WHERE key = 'me'").get()?.value) ?? ''
   const me = /\+(\d+)\)?$/.exec(meLabel)?.[1]
@@ -189,6 +189,8 @@ function fmtMessage(r: Row, withChat: boolean, mentions: (text: string) => strin
     const transcript = str(r.transcript)
     if (transcript) text += ` — transcript: "${transcript}"`
     text += ` (media id: ${r.id})`
+  } else {
+    text += ` (id: ${r.id})`
   }
   const quoted = str(r.quoted_text)
   const extra = (r.edited === 1 ? ' (edited)' : '') + (quoted ? ` (replying to: "${oneLine(mentions(quoted))}")` : '')

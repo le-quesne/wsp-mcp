@@ -86,8 +86,8 @@ test('read results tell the model that message text is untrusted', () => {
 test('messages come back in order, with who wrote each one', () => {
   const lines = getMessages(fixture(), { chat: 'Family', limit: 10 }).split('\n').filter(l => l.startsWith('['))
   assert.equal(lines.length, 3)
-  assert.match(lines[0], /José Pérez: Dinner at eight\?$/)
-  assert.match(lines[1], /You: Sí, perfecto$/)
+  assert.match(lines[0], /José Pérez: Dinner at eight\? \(id: m1\)$/)
+  assert.match(lines[1], /You: Sí, perfecto \(id: m2\)$/)
 })
 
 test('search ignores accents', () => {

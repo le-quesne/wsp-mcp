@@ -65,7 +65,7 @@ function withDb(fn: (db: DatabaseSync) => string) {
 }
 
 const server = new McpServer(
-  { name: 'whatsapp', version: '0.3.0' },
+  { name: 'whatsapp', version: '0.4.0' },
   {
     instructions:
       "Reads the user's personal WhatsApp, mirrored locally by a bridge process. " +
@@ -290,6 +290,8 @@ server.registerTool(
       'Write it in the user\'s voice (style_guide) and pass it as `parts`: 1–6 short messages sent one after another ' +
       'with "typing…" before each, the way people text. If they built a writing profile, every part is checked ' +
       'against it first: when something is unlike them nothing is sent and the problems come back to fix. ' +
+      'To tag someone in a group write @ and their name (e.g. @Alex or @Alex Smith); it becomes a real WhatsApp ' +
+      'mention, and an unknown or ambiguous name is sent as plain text. ' +
       'Set `verbatim` only when the user dictated the exact wording.',
     inputSchema: {
       chat: chatParam,
@@ -297,10 +299,11 @@ server.registerTool(
       text: z.string().min(1).max(2000).optional().describe('A single message; prefer `parts`'),
       verbatim: z.boolean().default(false).describe('The user dictated this exact text: skip the style check'),
       typing: z.boolean().default(true).describe('Show "typing…" before each message'),
+      replyTo: z.string().optional().describe('Message id (the "id:" shown by get_messages) to quote; applies to the first message'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  async ({ chat, parts, text, verbatim, typing }) => {
+  async ({ chat, parts, text, verbatim, typing, replyTo }) => {
     if (parts && text) return fail('Pass either `parts` or `text`, not both.')
     const messages = (parts ?? (text ? [text] : [])).map(p => p.trim()).filter(Boolean)
     if (!messages.length) return fail('Pass `parts` (preferred) or `text`.')
@@ -330,7 +333,7 @@ server.registerTool(
     for (const [i, message] of messages.entries()) {
       let r: BridgeReply
       try {
-        r = await bridge('POST', '/send', SEND_TIMEOUT_MS, { jid, text: message, typingMs: typing ? typingMsFor(message) : 0 })
+        r = await bridge('POST', '/send', SEND_TIMEOUT_MS, { jid, text: message, typingMs: typing ? typingMsFor(message) : 0, replyTo: i === 0 ? replyTo : undefined })
       } catch (err) {
         if (i === 0) return bridgeSendError(err)
         return fail(`Sent ${i} of ${messages.length} messages, then: ${bridgeSendError(err).content[0].text}`)

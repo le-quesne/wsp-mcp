@@ -29,7 +29,7 @@ import { paceDelay } from './pace.ts'
 import { forgetUnfinishedLink } from './pair.ts'
 import { AUTH_DIR, CONFIG_PATH, SOCKET_PATH, ensureHome, loadConfig } from './config.ts'
 import { confirmSend } from './confirm.ts'
-import { openWriter } from './db.ts'
+import { norm, openWriter } from './db.ts'
 import { extract } from './extract.ts'
 import { download, serial, transcribe, videoFrames } from './media.ts'
 import { displayName, label, sameTextElsewhere } from './queries.ts'
@@ -278,8 +278,106 @@ async function showTyping(s: WASocket, chat: string, ms: number): Promise<void> 
   await s.sendPresenceUpdate('paused', chat)
 }
 
+// People in a chat we can @mention, each with the name variants that should resolve to them: the
+// full name and the first name on its own. Built from who has spoken (groups) or the contact itself
+// (1:1). Names are accent/case-folded, so "@Tomás" and "@tomas" both match.
+function mentionCandidates(chat: string): { words: string[]; digits: string }[] {
+  const rows = chat.endsWith('@g.us')
+    ? store.db
+        .prepare(
+          `SELECT m.sender_jid AS jid, c.name AS nm, c.notify AS notify, c.verified_name AS vn
+             FROM (SELECT DISTINCT sender_jid FROM messages WHERE chat_jid = ? AND sender_jid IS NOT NULL) m
+             LEFT JOIN contacts c ON c.jid = m.sender_jid`,
+        )
+        .all(chat)
+    : store.db.prepare('SELECT jid, name AS nm, notify, verified_name AS vn FROM contacts WHERE jid = ?').all(chat)
+  const out: { words: string[]; digits: string }[] = []
+  const seen = new Set<string>()
+  for (const r of rows as Array<Record<string, unknown>>) {
+    const digits = String(r.jid ?? '').split('@')[0]
+    if (!/^\d{6,}$/.test(digits)) continue
+    for (const name of [r.nm, r.vn, r.notify]) {
+      if (typeof name !== 'string' || !name.trim()) continue
+      const words = norm(name).split(/\s+/).filter(Boolean)
+      if (!words.length) continue
+      for (const variant of words.length > 1 ? [words, [words[0]]] : [words]) {
+        const key = `${digits}|${variant.join(' ')}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ words: variant, digits })
+      }
+    }
+  }
+  return out
+}
+
+// "@Alex Smith" / "@sam" in outgoing text → the member's phone number, so the digit pass in
+// withMentions turns it into a real mention. The longest name wins ("Alex Smith" over just
+// "Alex"); an ambiguous name that two members share is left as plain text, never tagging the
+// wrong person.
+function resolveNameMentions(text: string, chat: string): string {
+  if (!/@\p{L}/u.test(text)) return text
+  const cands = mentionCandidates(chat)
+  if (!cands.length) return text
+  return text.replace(
+    /@(\p{L}[\p{L}\p{N}._'’-]*(?:\s+\p{L}[\p{L}\p{N}._'’-]*){0,3})/gu,
+    (whole, phrase: string) => {
+      const pw = norm(phrase).split(/\s+/).filter(Boolean)
+      let best = 0
+      const hits = new Set<string>()
+      for (const c of cands) {
+        if (c.words.length <= pw.length && c.words.every((w, i) => w === pw[i])) {
+          if (c.words.length > best) {
+            best = c.words.length
+            hits.clear()
+          }
+          if (c.words.length === best) hits.add(c.digits)
+        }
+      }
+      if (best === 0 || hits.size !== 1) return whole
+      const rest = phrase.split(/\s+/).slice(best).join(' ')
+      return `@${[...hits][0]}${rest ? ` ${rest}` : ''}`
+    },
+  )
+}
+
+// "@15551234567" in outgoing text becomes a real WhatsApp mention. Groups that address members by LID
+// need the LID in both the text and `mentions`, so swap the phone for the LID when we know it.
+// Display names ("@Alex") are resolved to numbers first by resolveNameMentions.
+function withMentions(text: string, chat: string): { text: string; mentions?: string[] } {
+  const mentions = new Set<string>()
+  const out = resolveNameMentions(text, chat).replace(/@(\d{6,})/g, (whole, digits: string) => {
+    const pn = `${digits}@s.whatsapp.net`
+    const lid = chat.endsWith('@g.us') ? store.lidFor(pn) : undefined
+    if (lid) {
+      mentions.add(lid)
+      return `@${lid.split('@')[0]}`
+    }
+    mentions.add(store.isKnownLid(`${digits}@lid`) ? `${digits}@lid` : pn)
+    return whole
+  })
+  return mentions.size ? { text: out, mentions: [...mentions] } : { text }
+}
+
+// Rebuilds the stored message as a WAMessage so WhatsApp can show it as the quoted bubble.
+function quotedMessage(chat: string, id: string): WAMessage | undefined {
+  const r = store.db.prepare('SELECT from_me, sender_jid, text FROM messages WHERE chat_jid = ? AND id = ?').get(chat, id)
+  if (!r) return undefined
+  const group = chat.endsWith('@g.us')
+  const sender = typeof r.sender_jid === 'string' ? r.sender_jid : undefined
+  return {
+    key: {
+      remoteJid: chat,
+      id,
+      fromMe: r.from_me === 1,
+      participant: group && r.from_me !== 1 && sender ? (store.lidFor(sender) ?? sender) : undefined,
+    },
+    message: { conversation: String(r.text) },
+  }
+}
+
 async function handleSend(body: unknown): Promise<Reply> {
-  const { jid, text, typingMs } = (body ?? {}) as { jid?: unknown; text?: unknown; typingMs?: unknown }
+  const { jid, text, typingMs, replyTo } = (body ?? {}) as { jid?: unknown; text?: unknown; typingMs?: unknown; replyTo?: unknown }
   if (typeof jid !== 'string' || typeof text !== 'string' || !text.trim()) {
     return [400, { error: 'jid and text are required' }]
   }
@@ -306,7 +404,11 @@ async function handleSend(body: unknown): Promise<Reply> {
     let sent
     try {
       if (typing) await showTyping(s, chat, typing)
-      sent = await s.sendMessage(chat, { text })
+      const quoted = typeof replyTo === 'string' && replyTo ? quotedMessage(chat, replyTo) : undefined
+      if (typeof replyTo === 'string' && replyTo && !quoted) {
+        return [404, { error: `Message ${replyTo} not found in ${who}; use an id from get_messages.` }]
+      }
+      sent = await s.sendMessage(chat, withMentions(text, chat), quoted ? { quoted } : undefined)
     } finally {
       if (typing) await s.sendPresenceUpdate('unavailable').catch(() => {})
     }

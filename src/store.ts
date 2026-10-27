@@ -312,6 +312,10 @@ export class Store {
     return r ? { id: String(r.id), fromMe: r.from_me === 1, ts: Number(r.ts) } : undefined
   }
 
+  isKnownLid(lid: string): boolean {
+    return this.lidToPn.has(lid)
+  }
+
   // Phone-number chats may still be keyed by LID on the phone.
   lidFor(pn: string): string | undefined {
     for (const [lid, p] of this.lidToPn) if (p === pn) return lid
