@@ -1,0 +1,6 @@
+{
+  "allowedRecipients": ["*"],
+  "confirmBeforeSending": false,
+  "minSecondsBetweenRecipients": 15,
+  "autoTranscribe": true
+}

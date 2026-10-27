@@ -2,3 +2,12 @@ node_modules/
 # The compiled menu bar app (scripts/menubar.sh builds it from menubar/).
 build/
 .DS_Store
+# Local state, in case WA_MCP_HOME points inside the repo.
+*.db
+*.db-*
+*.log
+auth/
+config.json
+voice.json
+voice.md
+.mcp.json

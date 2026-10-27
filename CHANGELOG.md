@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org).
 
+## [0.4.0] - 2026-10-27
+
+### Added
+
+- Mentions: `@Name` or `@Full Name` in a group message becomes a real WhatsApp mention of the member with that
+  name (longest match wins; unknown or ambiguous names stay plain text). `@` plus a phone number works too, and
+  groups that address members by LID get the LID.
+- Quoted replies: `send_message` takes `replyTo`, a message id, and sends the first message as a reply to it.
+- `get_messages` and `search_messages` show every message's id, not only media ones.
+- `config.example.json` with every sending setting and its default.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added
@@ -68,6 +79,7 @@ First public release.
 - Background agent (launchd) and menu bar status icon.
 - Tests for the send allowlist, config defaults, message parsing and chat lookup; CI on every push.
 
+[0.4.0]: https://github.com/le-quesne/wsp-mcp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/le-quesne/wsp-mcp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/le-quesne/wsp-mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/le-quesne/wsp-mcp/releases/tag/v0.1.0

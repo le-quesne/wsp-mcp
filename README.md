@@ -62,7 +62,7 @@ Paste this into Claude Code, with your number:
 
 ```text
 Install the WhatsApp MCP from https://github.com/le-quesne/wsp-mcp: clone it into ~/wsp-mcp and run
-`pnpm run setup --yes --phone +56912345678` in the background (it takes a few minutes). As soon as
+`pnpm run setup --yes --phone +15551234567` in the background (it takes a few minutes). As soon as
 the output shows a PAIRING CODE, tell me the code and wait while I type it on my phone.
 If Node 24+ or pnpm is missing, install it first.
 ```
@@ -113,11 +113,11 @@ Node 24 runs the TypeScript directly: there's no build step.
 | `status` | Whether the bridge is connected, how much history is stored, and who sending is allowed to |
 | `list_chats` | Chats by latest activity, with a preview of the last message; direct, groups or both |
 | `search_contacts` | People and groups by name or phone digits |
-| `get_messages` | A conversation (or every chat) in a time window, in order |
+| `get_messages` | A conversation (or every chat) in a time window, in order, each message with its id |
 | `search_messages` | Full-text search across chats, voice notes included |
 | `get_media` | The photo, voice note, video or document behind a message: photos as images, audio and video as transcripts |
 | `style_guide` | How you write, in general and in a given chat, with your own recent messages there to imitate |
-| `send_message` | Text to a chat, as one or several short messages with "typing…" before each, checked against your style and paced so it doesn't look like a bot |
+| `send_message` | Text to a chat, as one or several short messages with "typing…" before each, checked against your style and paced so it doesn't look like a bot; `@Name` becomes a real mention and `replyTo` quotes a message |
 | `send_file` | A video, image or document to a chat, with the same pacing (and the caption checked the same way) |
 
 ## Setting it up by hand
@@ -132,7 +132,7 @@ Node 24 runs the TypeScript directly: there's no build step.
    ```
 
    Scan the QR code: WhatsApp → Settings → Linked devices → Link a device.
-   Or use a pairing code instead: `pnpm bridge --phone 5491112345678`.
+   Or use a pairing code instead: `pnpm bridge --phone 15551234567`.
    Then wait while it prints `History sync: …` lines (the full import can take a few minutes).
 
 2. **Keep it running.** Either leave that terminal open, or run it in the background:
@@ -155,6 +155,19 @@ Node 24 runs the TypeScript directly: there's no build step.
 
    ```sh
    claude mcp add whatsapp --scope user -- node --disable-warning=ExperimentalWarning "$PWD/src/mcp.ts"
+   ```
+
+   Or, per project, in a `.mcp.json`:
+
+   ```json
+   {
+     "mcpServers": {
+       "whatsapp": {
+         "command": "node",
+         "args": ["--disable-warning=ExperimentalWarning", "/path/to/wsp-mcp/src/mcp.ts"]
+       }
+     }
+   }
    ```
 
 ## Photos, audio, video and documents
@@ -190,8 +203,15 @@ All of them are enforced in the bridge, so they hold even when Claude Code runs 
 prompts off. To approve every message and limit who gets them:
 
 ```json
-{ "allowedRecipients": ["5491112345678", "120363000000000000@g.us"], "confirmBeforeSending": true }
+{ "allowedRecipients": ["15551234567", "120363000000000000@g.us"], "confirmBeforeSending": true }
 ```
+
+[`config.example.json`](config.example.json) has every setting with its default; copy it to
+`~/.whatsapp-mcp/config.json` to start from there.
+
+In a group, `@Alex` or `@Alex Smith` in the text becomes a real WhatsApp mention of the member with that
+name (the longest match wins; an unknown or ambiguous name stays plain text). `replyTo` takes a message
+id from `get_messages` and sends the first message as a quoted reply to it.
 
 `send_message` sends text (max 2000 characters). `send_file` sends a local file with an optional
 caption: videos as playable videos (over 16 MB they're compressed to 720p first, which needs
@@ -252,6 +272,22 @@ limits, so these are cautious habits, not guarantees:
 - **Go easy on links and files** in a first message to someone.
 - **A new number is fragile.** If you just registered it, keep sending light for the first weeks.
 - **Experiment on a spare number,** never on the one you can't lose.
+
+## Data files
+
+Everything lives in `~/.whatsapp-mcp` (or `WA_MCP_HOME`), created with owner-only permissions:
+
+| Path | What it is |
+| --- | --- |
+| `auth/` | The linked-device session keys |
+| `messages.db` | The SQLite mirror: chats, contacts, messages, transcripts |
+| `config.json` | Sending settings (see [Sending](#sending)) |
+| `voice.json`, `voice.md` | Your writing profile, if you built one |
+| `media/` | Files downloaded by `get_media` |
+| `bridge.sock` | The Unix socket the MCP server sends through |
+| `bridge.log` | Background bridge log |
+
+None of it lives in the repo folder.
 
 ## Privacy and risks
 
